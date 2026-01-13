@@ -1,7 +1,7 @@
-import { useRef } from 'react';
-import { useFrame, useThree } from '@react-three/fiber';
-import * as THREE from 'three';
-import { usePlayerControls } from '../../hooks/usePlayerControls';
+import { useRef } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import * as THREE from "three";
+import { usePlayerControls } from "../../hooks/usePlayerControls";
 
 interface PlayerProps {
   /** Vitesse de déplacement */
@@ -32,10 +32,12 @@ export function Player({
   const frontVector = useRef(new THREE.Vector3());
   const sideVector = useRef(new THREE.Vector3());
 
-  // Initialisation de la position de la caméra
+  // Initialisation de la position et orientation de la caméra
   const isInitialized = useRef(false);
   if (!isInitialized.current) {
     camera.position.set(position[0], position[1], position[2]);
+    // Orienter la caméra vers l'écran (Z positif)
+    camera.lookAt(0, eyeHeight, 10);
     isInitialized.current = true;
   }
 
@@ -56,8 +58,14 @@ export function Player({
     camera.position.z += direction.current.z;
 
     // Appliquer les limites de la zone de jeu
-    camera.position.x = Math.max(bounds[0], Math.min(bounds[1], camera.position.x));
-    camera.position.z = Math.max(bounds[2], Math.min(bounds[3], camera.position.z));
+    camera.position.x = Math.max(
+      bounds[0],
+      Math.min(bounds[1], camera.position.x),
+    );
+    camera.position.z = Math.max(
+      bounds[2],
+      Math.min(bounds[3], camera.position.z),
+    );
 
     // Maintenir la hauteur des yeux constante
     camera.position.y = eyeHeight;

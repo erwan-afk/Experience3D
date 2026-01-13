@@ -1,25 +1,35 @@
-import { MeshReflectorMaterial } from '@react-three/drei'
-import { useControls } from 'leva'
-import * as THREE from 'three'
-import type { FloorProps } from '../../types'
+import { MeshReflectorMaterial } from "@react-three/drei";
+import { useControls } from "leva";
+import * as THREE from "three";
+import type { FloorProps } from "../../types";
 
 /**
  * Sol réflectif avec contrôles GUI via Leva
  */
 export function Floor({ size = [5, 5], position = [0, 0, 0] }: FloorProps) {
-  const controls = useControls('Sol Réflectif', {
-    blur: { value: 570, min: 0, max: 2000, step: 10 },
+  const controls = useControls("Sol Réflectif", {
+    blur: { value: 260, min: 0, max: 2000, step: 10 },
     resolution: { value: 1024, min: 256, max: 2048, step: 256 },
-    mirror: { value: 1, min: 0, max: 1, step: 0.01 },
-    mixBlur: { value: 1, min: 0, max: 1, step: 0.01 },
-    mixStrength: { value: 1, min: 0, max: 5, step: 0.1 },
-    color: '#ffffff',
-    metalness: { value: 1, min: 0, max: 1, step: 0.01 },
+    mirror: { value: 0.75, min: 0, max: 1, step: 0.01 },
+    mixBlur: { value: 20, min: 0, max: 20, step: 0.5 },
+    mixStrength: { value: 2, min: 0, max: 5, step: 0.1 },
+    color: "#ffffff",
+    metalness: { value: 0, min: 0, max: 1, step: 0.01 },
     roughness: { value: 1, min: 0, max: 1, step: 0.01 },
-  })
+    depthScale: { value: 0.8, min: 0, max: 5, step: 0.1 },
+    minDepthThreshold: { value: 0.4, min: 0, max: 1, step: 0.01 },
+    maxDepthThreshold: { value: 1.4, min: 0, max: 5, step: 0.1 },
+  });
+
+  // Position légèrement en dessous de 0 pour éviter le z-fighting
+  const floorPosition: [number, number, number] = [
+    position[0],
+    position[1] - 0.01,
+    position[2],
+  ];
 
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={position}>
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={floorPosition}>
       <planeGeometry args={size} />
       <MeshReflectorMaterial
         blur={[controls.blur, controls.blur]}
@@ -27,10 +37,13 @@ export function Floor({ size = [5, 5], position = [0, 0, 0] }: FloorProps) {
         mirror={controls.mirror}
         mixBlur={controls.mixBlur}
         mixStrength={controls.mixStrength}
-        color={controls.color as unknown as THREE.Color}
+        color={controls.color}
         metalness={controls.metalness}
         roughness={controls.roughness}
+        depthScale={controls.depthScale}
+        minDepthThreshold={controls.minDepthThreshold}
+        maxDepthThreshold={controls.maxDepthThreshold}
       />
     </mesh>
-  )
+  );
 }

@@ -16,7 +16,7 @@ export function MainScene({ videoUrl, onVideoReady }: MainSceneProps) {
   return (
     <>
       <Lights />
-      {/* <Floor size={[12, 12]} position={[0, 0, 0]} /> */}
+      <Floor size={[20, 20]} position={[0, 0, 0]} />
 
       <Suspense fallback={null}>
         {/* Écran en U avec vidéo panoramique 5760x1080 */}

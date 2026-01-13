@@ -8,30 +8,133 @@ interface UScreenProps {
   width?: number;
   height?: number;
   depth?: number;
+  cornerRadius?: number;
   onVideoReady?: (video: HTMLVideoElement) => void;
 }
 
 /**
- * Écran en U avec support vidéo panoramique
- * La vidéo 5760x1080 est mappée sur les 3 faces (gauche, fond, droite)
- *
- * Structure du U (vue de dessus):
- *       ┌─────────────┐  <- Mur du fond (Z+)
- *       │             │
- *  Mur  │             │  Mur
- * Gauche│             │ Droite
- *  (X-) │             │  (X+)
- *       │             │
- *       └      ○      ┘  <- Ouverture (Z-), joueur au centre
+ * Crée une géométrie en U avec coins arrondis
+ * La forme est générée comme un seul mesh continu pour des UV parfaits
+ */
+function createUShapeGeometry(
+  width: number,
+  height: number,
+  depth: number,
+  cornerRadius: number,
+  cornerSegments: number = 16,
+): THREE.BufferGeometry {
+  const r = Math.min(cornerRadius, width / 2, depth);
+
+  // Construire le chemin du U (vue de dessus, de l'intérieur)
+  // On part du bas du mur droit, on monte, coin droit, mur du fond, coin gauche, mur gauche
+  const points: THREE.Vector2[] = [];
+
+  // Mur droit (de Z=0 à Z=depth-r)
+  const rightWallLength = depth - r;
+  const numPointsWall = 10;
+
+  for (let i = 0; i <= numPointsWall; i++) {
+    const t = i / numPointsWall;
+    points.push(new THREE.Vector2(width / 2, t * rightWallLength));
+  }
+
+  // Coin droit (arc de 90°)
+  for (let i = 1; i <= cornerSegments; i++) {
+    const angle = (i / cornerSegments) * (Math.PI / 2);
+    const x = width / 2 - r + Math.cos(angle) * r;
+    const z = depth - r + Math.sin(angle) * r;
+    points.push(new THREE.Vector2(x, z));
+  }
+
+  // Mur du fond (de X=width/2-r à X=-width/2+r)
+  const backWallLength = width - 2 * r;
+  for (let i = 1; i <= numPointsWall; i++) {
+    const t = i / numPointsWall;
+    const x = width / 2 - r - t * backWallLength;
+    points.push(new THREE.Vector2(x, depth));
+  }
+
+  // Coin gauche (arc de 90°)
+  for (let i = 1; i <= cornerSegments; i++) {
+    const angle = Math.PI / 2 + (i / cornerSegments) * (Math.PI / 2);
+    const x = -width / 2 + r + Math.cos(angle) * r;
+    const z = depth - r + Math.sin(angle) * r;
+    points.push(new THREE.Vector2(x, z));
+  }
+
+  // Mur gauche (de Z=depth-r à Z=0)
+  for (let i = 1; i <= numPointsWall; i++) {
+    const t = i / numPointsWall;
+    const z = depth - r - t * (depth - r);
+    points.push(new THREE.Vector2(-width / 2, z));
+  }
+
+  // Calculer la longueur totale du chemin pour les UV
+  let totalLength = 0;
+  const lengths: number[] = [0];
+  for (let i = 1; i < points.length; i++) {
+    const dx = points[i].x - points[i - 1].x;
+    const dz = points[i].y - points[i - 1].y;
+    totalLength += Math.sqrt(dx * dx + dz * dz);
+    lengths.push(totalLength);
+  }
+
+  // Créer les vertices et UVs
+  const vertices: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const u = lengths[i] / totalLength;
+
+    // Vertex bas
+    vertices.push(p.x, 0, p.y);
+    uvs.push(u, 0);
+
+    // Vertex haut
+    vertices.push(p.x, height, p.y);
+    uvs.push(u, 1);
+  }
+
+  // Créer les faces (triangles)
+  for (let i = 0; i < points.length - 1; i++) {
+    const bl = i * 2; // bas gauche
+    const tl = i * 2 + 1; // haut gauche
+    const br = i * 2 + 2; // bas droite
+    const tr = i * 2 + 3; // haut droite
+
+    // Triangle 1
+    indices.push(bl, br, tl);
+    // Triangle 2
+    indices.push(tl, br, tr);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(vertices, 3),
+  );
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+
+  return geometry;
+}
+
+/**
+ * Écran en U avec coins arrondis et support vidéo panoramique
+ * La vidéo 5760x1080 est mappée sur toute la surface de manière continue
  */
 export function UScreen({
   videoUrl,
   width = 10,
   height = 3,
   depth = 10,
+  cornerRadius = 1,
   onVideoReady,
 }: UScreenProps) {
-  const groupRef = useRef<THREE.Group>(null);
+  const meshRef = useRef<THREE.Mesh>(null);
   const [videoTexture, setVideoTexture] = useState<THREE.VideoTexture | null>(
     null,
   );
@@ -41,6 +144,7 @@ export function UScreen({
     width: { value: width, min: 5, max: 20, step: 0.5 },
     height: { value: height, min: 1, max: 10, step: 0.5 },
     depth: { value: depth, min: 5, max: 20, step: 0.5 },
+    cornerRadius: { value: cornerRadius, min: 0.1, max: 3, step: 0.1 },
     emissiveIntensity: { value: 1, min: 0, max: 3, step: 0.1 },
   });
 
@@ -90,105 +194,32 @@ export function UScreen({
     }
   });
 
-  const w = controls.width;
-  const h = controls.height;
-  const d = controls.depth;
-
-  // Vidéo 5760x1080 = 3 sections de 1920px chacune
-  // Gauche: 0 à 1/3, Fond: 1/3 à 2/3, Droite: 2/3 à 1
+  // Créer la géométrie du U
+  const geometry = useMemo(() => {
+    return createUShapeGeometry(
+      controls.width,
+      controls.height,
+      controls.depth,
+      controls.cornerRadius,
+      16,
+    );
+  }, [controls.width, controls.height, controls.depth, controls.cornerRadius]);
 
   if (!videoTexture) {
     return null;
   }
 
   return (
-    <group ref={groupRef}>
-      {/* Mur gauche - affiche la partie droite de la vidéo */}
-      <WallPanel
-        position={[-w / 2, h / 2, 0]}
-        rotation={[0, Math.PI / 2, 0]}
-        width={d}
-        height={h}
-        uvStart={2 / 3}
-        uvEnd={1}
-        texture={videoTexture}
-        emissiveIntensity={controls.emissiveIntensity}
-      />
-
-      {/* Mur du fond */}
-      <WallPanel
-        position={[0, h / 2, d / 2]}
-        rotation={[0, Math.PI, 0]}
-        width={w}
-        height={h}
-        uvStart={1 / 3}
-        uvEnd={2 / 3}
-        texture={videoTexture}
-        emissiveIntensity={controls.emissiveIntensity}
-      />
-
-      {/* Mur droit - affiche la partie gauche de la vidéo */}
-      <WallPanel
-        position={[w / 2, h / 2, 0]}
-        rotation={[0, -Math.PI / 2, 0]}
-        width={d}
-        height={h}
-        uvStart={0}
-        uvEnd={1 / 3}
-        texture={videoTexture}
-        emissiveIntensity={controls.emissiveIntensity}
-      />
-    </group>
-  );
-}
-
-/**
- * Panneau mural plat
- */
-function WallPanel({
-  position,
-  rotation,
-  width,
-  height,
-  uvStart,
-  uvEnd,
-  texture,
-  emissiveIntensity,
-}: {
-  position: [number, number, number];
-  rotation: [number, number, number];
-  width: number;
-  height: number;
-  uvStart: number;
-  uvEnd: number;
-  texture: THREE.VideoTexture | null;
-  emissiveIntensity: number;
-}) {
-  const geometry = useMemo(() => {
-    const geo = new THREE.PlaneGeometry(width, height);
-
-    // Modifier les UVs pour mapper la bonne portion de la vidéo
-    const uvAttribute = geo.attributes.uv;
-    const uvArray = uvAttribute.array as Float32Array;
-
-    // PlaneGeometry UVs par défaut: [0,1], [1,1], [0,0], [1,0]
-    // On veut mapper uvStart->uvEnd sur l'axe X
-    for (let i = 0; i < uvAttribute.count; i++) {
-      const u = uvArray[i * 2];
-      uvArray[i * 2] = uvStart + u * (uvEnd - uvStart);
-    }
-
-    uvAttribute.needsUpdate = true;
-    return geo;
-  }, [width, height, uvStart, uvEnd]);
-
-  return (
-    <mesh position={position} rotation={rotation} geometry={geometry}>
+    <mesh
+      ref={meshRef}
+      geometry={geometry}
+      position={[0, 0, -controls.depth / 2]}
+    >
       <meshStandardMaterial
-        map={texture}
-        emissiveMap={texture}
+        map={videoTexture}
+        emissiveMap={videoTexture}
         emissive={new THREE.Color(1, 1, 1)}
-        emissiveIntensity={emissiveIntensity}
+        emissiveIntensity={controls.emissiveIntensity}
         side={THREE.DoubleSide}
         toneMapped={false}
       />

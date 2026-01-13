@@ -8,6 +8,7 @@ interface UScreenProps {
   width?: number;
   height?: number;
   depth?: number;
+  onVideoReady?: (video: HTMLVideoElement) => void;
 }
 
 /**
@@ -28,6 +29,7 @@ export function UScreen({
   width = 10,
   height = 3,
   depth = 10,
+  onVideoReady,
 }: UScreenProps) {
   const groupRef = useRef<THREE.Group>(null);
   const [videoTexture, setVideoTexture] = useState<THREE.VideoTexture | null>(
@@ -44,6 +46,13 @@ export function UScreen({
 
   // Création de la vidéo et texture
   useEffect(() => {
+    if (!videoUrl) {
+      console.error("videoUrl is undefined");
+      return;
+    }
+
+    console.log("Loading video:", videoUrl);
+
     const video = document.createElement("video");
     video.src = videoUrl;
     video.crossOrigin = "anonymous";
@@ -60,13 +69,18 @@ export function UScreen({
     texture.colorSpace = THREE.SRGBColorSpace;
     setVideoTexture(texture);
 
-    video.play().catch(console.error);
+    video.play().catch((err) => console.error("Video play error:", err));
+
+    if (onVideoReady) {
+      onVideoReady(video);
+    }
 
     return () => {
       video.pause();
       video.src = "";
       texture.dispose();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoUrl]);
 
   // Mise à jour de la texture vidéo
@@ -83,16 +97,20 @@ export function UScreen({
   // Vidéo 5760x1080 = 3 sections de 1920px chacune
   // Gauche: 0 à 1/3, Fond: 1/3 à 2/3, Droite: 2/3 à 1
 
+  if (!videoTexture) {
+    return null;
+  }
+
   return (
     <group ref={groupRef}>
-      {/* Mur gauche */}
+      {/* Mur gauche - affiche la partie droite de la vidéo */}
       <WallPanel
         position={[-w / 2, h / 2, 0]}
         rotation={[0, Math.PI / 2, 0]}
         width={d}
         height={h}
-        uvStart={1 / 3}
-        uvEnd={0}
+        uvStart={2 / 3}
+        uvEnd={1}
         texture={videoTexture}
         emissiveIntensity={controls.emissiveIntensity}
       />
@@ -103,20 +121,20 @@ export function UScreen({
         rotation={[0, Math.PI, 0]}
         width={w}
         height={h}
-        uvStart={2 / 3}
-        uvEnd={1 / 3}
+        uvStart={1 / 3}
+        uvEnd={2 / 3}
         texture={videoTexture}
         emissiveIntensity={controls.emissiveIntensity}
       />
 
-      {/* Mur droit */}
+      {/* Mur droit - affiche la partie gauche de la vidéo */}
       <WallPanel
         position={[w / 2, h / 2, 0]}
         rotation={[0, -Math.PI / 2, 0]}
         width={d}
         height={h}
-        uvStart={1}
-        uvEnd={2 / 3}
+        uvStart={0}
+        uvEnd={1 / 3}
         texture={videoTexture}
         emissiveIntensity={controls.emissiveIntensity}
       />

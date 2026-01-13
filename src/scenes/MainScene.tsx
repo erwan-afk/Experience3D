@@ -1,42 +1,43 @@
 import { Suspense } from "react";
 import { PointerLockControls } from "@react-three/drei";
-import { Floor, Lights, UScreen, SpatialAudio } from "../components/3d";
+import { Floor, Lights, UScreen } from "../components/3d";
 import { Player } from "../components/3d/Player";
+import type { ParticleEffectType } from "../types/particles";
 
 interface MainSceneProps {
-  videoUrl: string;
+  videoUrl?: string;
   onVideoReady?: (video: HTMLVideoElement) => void;
+  particleEffect?: ParticleEffectType;
+  particlesEnabled?: boolean;
 }
 
 /**
  * Scène principale - Expérience vidéo et sonore immersive
- * Écran en U avec vidéo panoramique et audio spatialisé
+ * Écran en U avec vidéo panoramique OU animation de particules
  */
-export function MainScene({ videoUrl, onVideoReady }: MainSceneProps) {
+export function MainScene({
+  videoUrl,
+  onVideoReady,
+  particleEffect = "fireflies",
+  particlesEnabled = false,
+}: MainSceneProps) {
   return (
     <>
       <Lights />
       <Floor size={[20, 20]} position={[0, 0, 0]} />
 
       <Suspense fallback={null}>
-        {/* Écran en U avec vidéo panoramique 5760x1080 */}
+        {/* Écran en U - affiche vidéo OU particules */}
         <UScreen
           videoUrl={videoUrl}
+          particleEffect={particleEffect}
+          showParticles={particlesEnabled}
           width={10}
           height={5}
           depth={10}
           onVideoReady={onVideoReady}
         />
       </Suspense>
-
-      {/* Audio spatialisé - désactivé temporairement */}
-      {/* <SpatialAudio
-        audioUrl="/genesis-audio.mp3"
-        position={[0, 1.5, 3]}
-        volume={1}
-        refDistance={2}
-        maxDistance={15}
-      /> */}
 
       {/* Contrôles FPS: PointerLockControls pour la souris */}
       <PointerLockControls />

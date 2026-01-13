@@ -3,8 +3,6 @@ import { Button } from "./button";
 import { Play, Pause, Volume2, VolumeX } from "lucide-react";
 
 interface VideoControlsProps {
-  currentVideo: number;
-  onVideoChange: (videoNumber: number) => void;
   videoElement: HTMLVideoElement | null;
 }
 
@@ -61,11 +59,7 @@ function ProgressBar({
   );
 }
 
-export function VideoControls({
-  currentVideo,
-  onVideoChange,
-  videoElement,
-}: VideoControlsProps) {
+export function VideoControls({ videoElement }: VideoControlsProps) {
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
@@ -124,6 +118,9 @@ export function VideoControls({
     [videoElement],
   );
 
+  // Ne pas afficher si pas de vidéo
+  if (!videoElement) return null;
+
   return (
     <div
       onClick={(e) => e.stopPropagation()}
@@ -133,74 +130,53 @@ export function VideoControls({
         bottom: "24px",
         left: "50%",
         transform: "translateX(-50%)",
-        zIndex: 9999,
+        zIndex: 100,
         display: "flex",
-        flexDirection: "column",
+        alignItems: "center",
         gap: "12px",
-        backgroundColor: "rgba(0, 0, 0, 0.8)",
+        backgroundColor: "rgba(0, 0, 0, 0.7)",
         backdropFilter: "blur(8px)",
-        padding: "16px",
+        padding: "12px 16px",
         borderRadius: "12px",
-        border: "1px solid rgba(255, 255, 255, 0.1)",
-        minWidth: "500px",
+        minWidth: "400px",
       }}
     >
-      {/* Barre de progression */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-        <span
-          style={{
-            fontSize: "12px",
-            color: "rgba(255,255,255,0.7)",
-            minWidth: "40px",
-          }}
-        >
-          {formatTime(currentTime)}
-        </span>
-        <ProgressBar value={currentTime} max={duration} onChange={handleSeek} />
-        <span
-          style={{
-            fontSize: "12px",
-            color: "rgba(255,255,255,0.7)",
-            minWidth: "40px",
-          }}
-        >
-          {formatTime(duration)}
-        </span>
-      </div>
+      {/* Play/Pause */}
+      <Button variant="ghost" size="icon" onClick={togglePlay}>
+        {isPlaying ? <Pause size={18} /> : <Play size={18} />}
+      </Button>
 
-      {/* Contrôles */}
-      <div
+      {/* Volume */}
+      <Button variant="ghost" size="icon" onClick={toggleMute}>
+        {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+      </Button>
+
+      {/* Temps actuel */}
+      <span
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
+          fontSize: "12px",
+          color: "rgba(255,255,255,0.7)",
+          minWidth: "40px",
+          fontFamily: "monospace",
         }}
       >
-        {/* Play/Pause et Volume */}
-        <div style={{ display: "flex", gap: "8px" }}>
-          <Button variant="ghost" size="icon" onClick={togglePlay}>
-            {isPlaying ? <Pause size={20} /> : <Play size={20} />}
-          </Button>
-          <Button variant="ghost" size="icon" onClick={toggleMute}>
-            {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
-          </Button>
-        </div>
+        {formatTime(currentTime)}
+      </span>
 
-        {/* Sélection de scène */}
-        <div style={{ display: "flex", gap: "6px" }}>
-          {[1, 2, 3, 4].map((num) => (
-            <Button
-              key={num}
-              variant={currentVideo === num ? "default" : "outline"}
-              size="sm"
-              onClick={() => onVideoChange(num)}
-              style={{ minWidth: "70px" }}
-            >
-              Scène {num}
-            </Button>
-          ))}
-        </div>
-      </div>
+      {/* Barre de progression */}
+      <ProgressBar value={currentTime} max={duration} onChange={handleSeek} />
+
+      {/* Durée totale */}
+      <span
+        style={{
+          fontSize: "12px",
+          color: "rgba(255,255,255,0.7)",
+          minWidth: "40px",
+          fontFamily: "monospace",
+        }}
+      >
+        {formatTime(duration)}
+      </span>
     </div>
   );
 }

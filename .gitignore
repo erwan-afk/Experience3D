@@ -3,3 +3,8 @@ node_modules
 dist
 dist-ssr
 *.local
+
+/public/scene1.mp4
+/public/scene2.mp4
+/public/scene3.mp4
+/public/scene4.mp4

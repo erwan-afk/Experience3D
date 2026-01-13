@@ -1,18 +1,18 @@
-import type { CanvasConfig, LightConfig } from '../types'
+import type { CanvasConfig, LightConfig } from "../types";
 
 export const canvasConfig: CanvasConfig = {
   camera: {
-    position: [0, 0, 3],
-    fov: 50,
+    position: [0, 1.6, 0],
+    fov: 75,
   },
   gl: {
     antialias: true,
     alpha: false,
-    powerPreference: 'high-performance',
+    powerPreference: "high-performance",
     preserveDrawingBuffer: false,
     failIfMajorPerformanceCaveat: false,
   },
-}
+};
 
 export const lightConfig: LightConfig = {
   ambient: {
@@ -22,4 +22,4 @@ export const lightConfig: LightConfig = {
     position: [10, 10, 5],
     intensity: 1,
   },
-}
+};

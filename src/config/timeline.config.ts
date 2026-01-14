@@ -56,7 +56,7 @@ export const ambientParticleEvents: AmbientParticleEvent[] = [
   {
     effect: "grass", // Herbe qui pousse
     startTime: 940000, // 15:40
-    duration: 180000, // 3 minutes
+    duration: 990000, // 3 minutes
   },
   {
     effect: "butterfly", // Papillon qui vole

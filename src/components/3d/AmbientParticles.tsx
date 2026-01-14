@@ -1,6 +1,7 @@
 import { useRef, useMemo, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useGLTF, useAnimations } from "@react-three/drei";
+import { useControls } from "leva";
 import * as THREE from "three";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import type { ParticleEffectType } from "../../types/particles";
@@ -324,7 +325,7 @@ function Butterfly({ enabled = true }: { enabled?: boolean }) {
 
   // État du papillon - physique de steering
   const pathDataRef = useRef({
-    pos: new THREE.Vector3(0, 6, 0),
+    pos: new THREE.Vector3(0, 2, 0),
     vel: new THREE.Vector3(0.4, 0, 0),
     dir: new THREE.Vector3(1, 0, 0),
     rotX: 0,
@@ -432,8 +433,10 @@ function Butterfly({ enabled = true }: { enabled?: boolean }) {
     if (d.pos.x < -softMargin) edgeForce.x -= (d.pos.x + softMargin) * 0.3;
     if (d.pos.z > softMargin) edgeForce.z -= (d.pos.z - softMargin) * 0.3;
     if (d.pos.z < -softMargin) edgeForce.z -= (d.pos.z + softMargin) * 0.3;
-    if (d.pos.y > 4) edgeForce.y -= (d.pos.y - 4) * 0.5;
-    if (d.pos.y < 2) edgeForce.y += (2 - d.pos.y) * 0.5;
+    // Attirer vers le bas (préférence pour voler dans l'herbe)
+    edgeForce.y -= 0.15; // Force constante vers le bas
+    if (d.pos.y > 1.5) edgeForce.y -= (d.pos.y - 1.5) * 0.8;
+    if (d.pos.y < 0.3) edgeForce.y += (0.3 - d.pos.y) * 0.5;
 
     d.dir.add(edgeForce.multiplyScalar(delta * 2));
     d.dir.normalize();
@@ -441,7 +444,7 @@ function Butterfly({ enabled = true }: { enabled?: boolean }) {
     // Limites dures
     d.pos.x = THREE.MathUtils.clamp(d.pos.x, -margin, margin);
     d.pos.z = THREE.MathUtils.clamp(d.pos.z, -margin, margin);
-    d.pos.y = THREE.MathUtils.clamp(d.pos.y, 1.5, 5);
+    d.pos.y = THREE.MathUtils.clamp(d.pos.y, 0.4, 2);
 
     // ================================
     // 6. BATTEMENT D'AILES → PORTANCE
@@ -456,7 +459,7 @@ function Butterfly({ enabled = true }: { enabled?: boolean }) {
     );
 
     // Position de départ en haut
-    entryPos.y = 6 + (d.pos.y + lift - 6) * easedEntry;
+    entryPos.y = 4 + (d.pos.y + lift - 4) * easedEntry;
 
     groupRef.current.position.copy(entryPos);
 
@@ -503,15 +506,15 @@ function Butterfly({ enabled = true }: { enabled?: boolean }) {
   if (!enabled) return null;
 
   return (
-    <group ref={groupRef} scale={0.2} position={[0, 6, 0]}>
+    <group ref={groupRef} scale={0.2} position={[0, 4, 0]}>
       <primitive object={butterflyModel} rotation={[-Math.PI / 2, 0, 0]} />
-      {/* Glow effect - lumière décalée sous le papillon */}
+      {/* Glow effect - lumière au-dessus du papillon */}
       <pointLight
         color="#0080FF"
         intensity={6}
         distance={6}
         decay={2}
-        position={[0, -8, 0]}
+        position={[0, 5, 0]}
       />
       {/* Halo visuel circulaire */}
       <sprite scale={[6, 6, 1]}>
@@ -661,11 +664,137 @@ function GrowingGrass({
   if (!enabled) return null;
 
   return (
-    <instancedMesh
-      ref={meshRef}
-      args={[grassGeometry, grassMaterial, grassCount]}
-      frustumCulled={false}
-    />
+    <>
+      <instancedMesh
+        ref={meshRef}
+        args={[grassGeometry, grassMaterial, grassCount]}
+        frustumCulled={false}
+      />
+      <Flowers enabled={enabled} startTimeRef={startTimeRef} />
+    </>
+  );
+}
+
+// Précharger le modèle de fleurs
+useGLTF.preload("/flowers.glb");
+
+// Composant pour les fleurs dans l'herbe
+function Flowers({
+  enabled = true,
+  startTimeRef,
+}: {
+  enabled?: boolean;
+  startTimeRef: React.MutableRefObject<number | null>;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const flowerCount = 30;
+  const { scene } = useGLTF("/flowers.glb");
+
+  // Contrôles leva pour la position du glow
+  const { glowX, glowY, glowZ, glowIntensity, glowDistance } = useControls(
+    "Flower Glow",
+    {
+      glowX: { value: -0.6, min: -3, max: 3, step: 0.1 },
+      glowY: { value: 2.1, min: 0, max: 5, step: 0.1 },
+      glowZ: { value: -0.3, min: -3, max: 3, step: 0.1 },
+      glowIntensity: { value: 0.02, min: 0, max: 1, step: 0.01 },
+      glowDistance: { value: 9.0, min: 0.5, max: 10, step: 0.5 },
+    },
+  );
+
+  // Données des fleurs
+  const flowerData = useMemo(() => {
+    const data = [];
+    for (let i = 0; i < flowerCount; i++) {
+      data.push({
+        x: -4 + Math.random() * 8,
+        z: -4 + Math.random() * 8,
+        growthDelay: Math.random() * 20 + 15,
+        scale: 0.25 + Math.random() * 0.15,
+        rotation: Math.random() * Math.PI * 2,
+      });
+    }
+    return data;
+  }, [flowerCount]);
+
+  // Cloner la scène pour chaque fleur
+  const flowerClones = useMemo(() => {
+    return flowerData.map(() => scene.clone(true));
+  }, [scene, flowerData]);
+
+  // Refs pour chaque fleur
+  const flowerRefs = useRef<THREE.Group[]>([]);
+
+  // Animation de croissance
+  useFrame((state) => {
+    if (!enabled || startTimeRef.current === null) return;
+
+    const elapsed = state.clock.elapsedTime - startTimeRef.current;
+
+    flowerRefs.current.forEach((ref, i) => {
+      if (!ref) return;
+      const data = flowerData[i];
+      const growthProgress = Math.max(
+        0,
+        Math.min(1, (elapsed - data.growthDelay) / 5),
+      );
+
+      const smoothGrowth =
+        growthProgress * growthProgress * (3 - 2 * growthProgress);
+      ref.scale.setScalar(data.scale * smoothGrowth);
+      ref.scale.setScalar(data.scale);
+    });
+  });
+
+  // Texture de glow circulaire rouge (comme le papillon mais en rouge)
+  const glowTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d")!;
+    const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, "rgba(255, 100, 80, 0.6)");
+    gradient.addColorStop(0.3, "rgba(255, 60, 40, 0.3)");
+    gradient.addColorStop(0.6, "rgba(200, 30, 20, 0.1)");
+    gradient.addColorStop(1, "rgba(150, 0, 0, 0)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(canvas);
+  }, []);
+
+  return (
+    <group ref={groupRef}>
+      {flowerData.map((data, i) => (
+        <group
+          key={i}
+          ref={(el) => {
+            if (el) flowerRefs.current[i] = el;
+          }}
+          position={[data.x, 0, data.z]}
+          rotation={[0, data.rotation, 0]}
+          scale={0.001}
+        >
+          <primitive object={flowerClones[i]} />
+          {/* Glow comme le papillon */}
+          <pointLight
+            color="#ff4422"
+            intensity={glowIntensity}
+            distance={glowDistance}
+            decay={2}
+            position={[glowX, glowY, glowZ]}
+          />
+          {/*<sprite position={[-0.6, 1.8, -0.2]} scale={[1.2, 1.2, 1]}>
+            <spriteMaterial
+              map={glowTexture}
+              transparent
+              opacity={0.2}
+              blending={THREE.AdditiveBlending}
+              depthWrite={false}
+            />
+          </sprite>*/}
+        </group>
+      ))}
+    </group>
   );
 }
 

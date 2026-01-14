@@ -25,6 +25,7 @@ interface UseTimelineReturn {
   play: () => void;
   pause: () => void;
   goToScene: (index: number) => void;
+  goToTime: (timeMs: number) => void;
   togglePlaybackMode: () => void;
   scenes: Scene[];
   currentIndex: number;
@@ -338,6 +339,81 @@ export function useTimeline({
     [scenes.length, doTransition],
   );
 
+  // Naviguer vers un temps global spécifique (en ms)
+  const goToTime = useCallback(
+    (timeMs: number) => {
+      if (transitioningRef.current) return;
+
+      // Trouver la scène correspondante
+      let accumulatedTime = 0;
+      let targetIndex = 0;
+      let timeInScene = 0;
+
+      for (let i = 0; i < scenes.length; i++) {
+        const sceneDuration = getSceneDuration(scenes[i]);
+        if (accumulatedTime + sceneDuration > timeMs) {
+          targetIndex = i;
+          timeInScene = timeMs - accumulatedTime;
+          break;
+        }
+        accumulatedTime += sceneDuration;
+        targetIndex = i;
+        timeInScene = timeMs - accumulatedTime;
+      }
+
+      // Si on est déjà sur la bonne scène, juste seek
+      if (targetIndex === currentIndex) {
+        setElapsedTime(timeInScene);
+        if (videoElement && isVideoScene(scenes[targetIndex])) {
+          videoElement.currentTime = timeInScene / 1000;
+        }
+      } else {
+        // Sinon, transition vers la scène
+        transitioningRef.current = true;
+        setTransitionState("fading-out");
+
+        let opacity = 0;
+        const maxOpacity = 1;
+        const fadeSpeed = 0.03; // Plus rapide pour navigation
+
+        const fadeOutInterval = setInterval(() => {
+          opacity += fadeSpeed;
+          if (opacity >= maxOpacity) {
+            clearInterval(fadeOutInterval);
+            setFadeOpacity(maxOpacity);
+
+            setCurrentIndex(targetIndex);
+            setElapsedTime(timeInScene);
+
+            // Seek la vidéo si c'est une scène vidéo
+            setTimeout(() => {
+              if (videoElement && isVideoScene(scenes[targetIndex])) {
+                videoElement.currentTime = timeInScene / 1000;
+              }
+
+              setTransitionState("fading-in");
+              let fadeInOpacity = maxOpacity;
+              const fadeInInterval = setInterval(() => {
+                fadeInOpacity -= fadeSpeed;
+                if (fadeInOpacity <= 0) {
+                  clearInterval(fadeInInterval);
+                  setFadeOpacity(0);
+                  setTransitionState("idle");
+                  transitioningRef.current = false;
+                } else {
+                  setFadeOpacity(fadeInOpacity);
+                }
+              }, 16);
+            }, 50);
+          } else {
+            setFadeOpacity(opacity);
+          }
+        }, 16);
+      }
+    },
+    [scenes, currentIndex, getSceneDuration, videoElement],
+  );
+
   const togglePlaybackMode = useCallback(() => {
     setPlaybackMode((prev) => (prev === "auto" ? "manual" : "auto"));
   }, []);
@@ -401,6 +477,7 @@ export function useTimeline({
     play,
     pause,
     goToScene,
+    goToTime,
     togglePlaybackMode,
     scenes,
     currentIndex,

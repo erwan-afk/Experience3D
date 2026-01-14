@@ -20,6 +20,7 @@ interface TimelineProps {
   play: () => void;
   pause: () => void;
   goToScene: (index: number) => void;
+  goToTime: (timeMs: number) => void;
   togglePlaybackMode: () => void;
   // Pour les contrôles vidéo
   videoElement: HTMLVideoElement | null;
@@ -78,6 +79,7 @@ export function Timeline({
   play,
   pause,
   goToScene,
+  goToTime,
   togglePlaybackMode,
   videoElement,
   showParticles,
@@ -330,11 +332,14 @@ export function Timeline({
         {ambientParticleEvents.map((event, index) => {
           const startPercent = (event.startTime / totalDuration) * 100;
           const widthPercent = (event.duration / totalDuration) * 100;
-          const isActive = showAmbientParticles;
+          const isActive =
+            elapsedTime >= event.startTime &&
+            elapsedTime < event.startTime + event.duration;
 
           return (
             <div
               key={index}
+              onClick={() => goToTime(event.startTime)}
               style={{
                 position: "absolute",
                 left: `${startPercent}%`,
@@ -348,6 +353,19 @@ export function Timeline({
                 justifyContent: "center",
                 borderRadius: "3px",
                 transition: "background-color 200ms",
+                cursor: "pointer",
+              }}
+              onMouseEnter={(e) => {
+                if (!isActive) {
+                  e.currentTarget.style.backgroundColor =
+                    "rgba(255, 100, 50, 0.6)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) {
+                  e.currentTarget.style.backgroundColor =
+                    "rgba(255, 100, 50, 0.4)";
+                }
               }}
             >
               <span

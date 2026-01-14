@@ -70,6 +70,7 @@ export default function App() {
         play={timeline.play}
         pause={timeline.pause}
         goToScene={timeline.goToScene}
+        goToTime={timeline.goToTime}
         togglePlaybackMode={timeline.togglePlaybackMode}
         videoElement={videoElement}
         showParticles={timeline.showParticles}

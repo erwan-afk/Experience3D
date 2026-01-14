@@ -197,14 +197,32 @@ function FallingRocks({
 }
 
 // Shader pour l'herbe avec éclairage similaire aux rocks (ambientLight: 0.1)
+// Nombre maximum de lumières de fleurs supportées
+const MAX_FLOWER_LIGHTS = 30;
+
 class GrassMaterial extends THREE.ShaderMaterial {
   constructor() {
+    // Créer un array de Vector3 pour les positions des lumières
+    const flowerLightPositions: THREE.Vector3[] = [];
+    const flowerLightIntensities: number[] = [];
+    for (let i = 0; i < MAX_FLOWER_LIGHTS; i++) {
+      flowerLightPositions.push(new THREE.Vector3(0, -100, 0)); // Position hors vue par défaut
+      flowerLightIntensities.push(0); // Intensité 0 par défaut
+    }
+
     super({
       uniforms: {
         fTime: { value: 0.0 },
         fGrowth: { value: 0.0 },
         vPlayerPosition: { value: new THREE.Vector3(0.0, -100.0, 0.0) },
-        fPlayerColliderRadius: { value: 4.0 }, // Rayon d'interaction avec le joueur (herbe se penche)
+        fPlayerColliderRadius: { value: 4.0 },
+        // Uniforms pour les lumières des fleurs
+        uFlowerLightPositions: { value: flowerLightPositions },
+        uFlowerLightIntensities: { value: flowerLightIntensities },
+        uFlowerLightColor: { value: new THREE.Color("#a6d647") },
+        uFlowerLightBaseIntensity: { value: 0.02 },
+        uFlowerLightDistance: { value: 9.0 },
+        uFlowerLightCount: { value: 0 },
       },
       vertexShader: `
         uniform float fTime;
@@ -271,6 +289,13 @@ class GrassMaterial extends THREE.ShaderMaterial {
         }
       `,
       fragmentShader: `
+        uniform vec3 uFlowerLightPositions[${MAX_FLOWER_LIGHTS}];
+        uniform float uFlowerLightIntensities[${MAX_FLOWER_LIGHTS}];
+        uniform vec3 uFlowerLightColor;
+        uniform float uFlowerLightBaseIntensity;
+        uniform float uFlowerLightDistance;
+        uniform int uFlowerLightCount;
+
         varying float vHeightFactor;
         varying vec3 vInstanceCol;
         varying vec3 vWorldPos;
@@ -295,6 +320,30 @@ class GrassMaterial extends THREE.ShaderMaterial {
 
           // Légère variation positionnelle
           finalColor *= 0.95 + 0.1 * sin(vWorldPos.x * 3.0 + vWorldPos.z * 3.0);
+
+          // Calcul de l'éclairage des fleurs
+          vec3 flowerLightContribution = vec3(0.0);
+          for (int i = 0; i < ${MAX_FLOWER_LIGHTS}; i++) {
+            if (i >= uFlowerLightCount) break;
+
+            vec3 lightPos = uFlowerLightPositions[i];
+            float lightIntensity = uFlowerLightIntensities[i];
+            float dist = length(lightPos - vWorldPos);
+
+            // Atténuation quadratique avec distance max
+            if (dist < uFlowerLightDistance && lightIntensity > 0.0) {
+              float normalizedDist = dist / uFlowerLightDistance;
+              // Atténuation douce: decay quadratique
+              float attenuation = 1.0 - normalizedDist;
+              attenuation = attenuation * attenuation;
+
+              // Contribution de cette lumière (avec intensité individuelle basée sur la croissance)
+              flowerLightContribution += uFlowerLightColor * uFlowerLightBaseIntensity * lightIntensity * attenuation;
+            }
+          }
+
+          // Ajouter la contribution des lumières des fleurs
+          finalColor += baseColor * flowerLightContribution * 15.0;
 
           gl_FragColor = vec4(finalColor, 1.0);
         }
@@ -531,6 +580,15 @@ function Butterfly({ enabled = true }: { enabled?: boolean }) {
 }
 
 // Composant pour l'herbe qui pousse avec InstancedMesh
+// Type pour les données des fleurs
+interface FlowerData {
+  x: number;
+  z: number;
+  growthDelay: number;
+  scale: number;
+  rotation: number;
+}
+
 function GrowingGrass({
   enabled = true,
   opacity = 1,
@@ -540,7 +598,35 @@ function GrowingGrass({
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const grassCount = 15000;
+  const flowerCount = 30;
   const startTimeRef = useRef<number | null>(null);
+
+  // Contrôles leva pour la position du glow (partagé avec Flowers)
+  const { glowX, glowY, glowZ, glowIntensity, glowDistance } = useControls(
+    "Flower Glow",
+    {
+      glowX: { value: -0.6, min: -3, max: 3, step: 0.1 },
+      glowY: { value: 2.1, min: 0, max: 5, step: 0.1 },
+      glowZ: { value: -0.3, min: -3, max: 3, step: 0.1 },
+      glowIntensity: { value: 0.02, min: 0, max: 1, step: 0.01 },
+      glowDistance: { value: 9.0, min: 0.5, max: 15, step: 0.5 },
+    },
+  );
+
+  // Données des fleurs - générées une seule fois et partagées
+  const flowerData = useMemo<FlowerData[]>(() => {
+    const data: FlowerData[] = [];
+    for (let i = 0; i < flowerCount; i++) {
+      data.push({
+        x: -4 + Math.random() * 8,
+        z: -4 + Math.random() * 8,
+        growthDelay: Math.random() * 20 + 15,
+        scale: 0.15 + Math.random() * 0.1,
+        rotation: Math.random() * Math.PI * 2,
+      });
+    }
+    return data;
+  }, [flowerCount]);
 
   // Créer la géométrie d'un brin d'herbe courbé avec plusieurs segments
   const grassGeometry = useMemo(() => {
@@ -659,6 +745,49 @@ function GrowingGrass({
 
     // Position du joueur (caméra)
     material.uniforms.vPlayerPosition.value.copy(state.camera.position);
+
+    // Mettre à jour les positions des lumières des fleurs
+    const lightPositions = material.uniforms.uFlowerLightPositions
+      .value as THREE.Vector3[];
+    const lightIntensities = material.uniforms.uFlowerLightIntensities
+      .value as number[];
+
+    for (let i = 0; i < flowerData.length; i++) {
+      const data = flowerData[i];
+
+      // Calculer le growthProgress de cette fleur (même calcul que dans Flowers)
+      const growthProgress = Math.max(
+        0,
+        Math.min(1, (elapsed - data.growthDelay) / 5),
+      );
+      const smoothGrowth =
+        growthProgress * growthProgress * (3 - 2 * growthProgress);
+
+      // Position absolue de la lumière (même que la pointLight)
+      const worldX = data.x;
+      const worldY = 2.2; // Au-dessus de l'herbe
+      const worldZ = data.z;
+
+      // Position toujours définie, seule l'intensité change
+      lightPositions[i].set(worldX, worldY, worldZ);
+
+      // L'intensité monte de 0 à 1 entre 20% et 50% de croissance
+      const startThreshold = 0.2;
+      const endThreshold = 0.5;
+      const adjustedIntensity =
+        smoothGrowth < startThreshold
+          ? 0
+          : smoothGrowth > endThreshold
+            ? 1
+            : (smoothGrowth - startThreshold) / (endThreshold - startThreshold);
+      lightIntensities[i] = adjustedIntensity;
+    }
+
+    // Mettre à jour les paramètres des lumières
+    // Toujours passer le nombre total de fleurs, le shader filtrera via l'intensité
+    material.uniforms.uFlowerLightCount.value = flowerData.length;
+    material.uniforms.uFlowerLightBaseIntensity.value = 2.4;
+    material.uniforms.uFlowerLightDistance.value = 2.5;
   });
 
   if (!enabled) return null;
@@ -670,7 +799,16 @@ function GrowingGrass({
         args={[grassGeometry, grassMaterial, grassCount]}
         frustumCulled={false}
       />
-      <Flowers enabled={enabled} startTimeRef={startTimeRef} />
+      <Flowers
+        enabled={enabled}
+        startTimeRef={startTimeRef}
+        flowerData={flowerData}
+        glowX={glowX}
+        glowY={glowY}
+        glowZ={glowZ}
+        glowIntensity={glowIntensity}
+        glowDistance={glowDistance}
+      />
     </>
   );
 }
@@ -682,58 +820,46 @@ useGLTF.preload("/flowers.glb");
 function Flowers({
   enabled = true,
   startTimeRef,
+  flowerData,
+  glowX,
+  glowY,
+  glowZ,
+  glowIntensity,
+  glowDistance,
 }: {
   enabled?: boolean;
   startTimeRef: React.MutableRefObject<number | null>;
+  flowerData: FlowerData[];
+  glowX: number;
+  glowY: number;
+  glowZ: number;
+  glowIntensity: number;
+  glowDistance: number;
 }) {
   const groupRef = useRef<THREE.Group>(null);
-  const flowerCount = 30;
   const { scene } = useGLTF("/flowers.glb");
-
-  // Contrôles leva pour la position du glow
-  const { glowX, glowY, glowZ, glowIntensity, glowDistance } = useControls(
-    "Flower Glow",
-    {
-      glowX: { value: -0.6, min: -3, max: 3, step: 0.1 },
-      glowY: { value: 2.1, min: 0, max: 5, step: 0.1 },
-      glowZ: { value: -0.3, min: -3, max: 3, step: 0.1 },
-      glowIntensity: { value: 0.02, min: 0, max: 1, step: 0.01 },
-      glowDistance: { value: 9.0, min: 0.5, max: 10, step: 0.5 },
-    },
-  );
-
-  // Données des fleurs
-  const flowerData = useMemo(() => {
-    const data = [];
-    for (let i = 0; i < flowerCount; i++) {
-      data.push({
-        x: -4 + Math.random() * 8,
-        z: -4 + Math.random() * 8,
-        growthDelay: Math.random() * 20 + 15,
-        scale: 0.25 + Math.random() * 0.15,
-        rotation: Math.random() * Math.PI * 2,
-      });
-    }
-    return data;
-  }, [flowerCount]);
 
   // Cloner la scène pour chaque fleur
   const flowerClones = useMemo(() => {
     return flowerData.map(() => scene.clone(true));
   }, [scene, flowerData]);
 
-  // Refs pour chaque fleur
+  // Refs pour chaque fleur et leurs pointLights
   const flowerRefs = useRef<THREE.Group[]>([]);
+  const lightRefs = useRef<THREE.PointLight[]>([]);
 
-  // Animation de croissance
+  // Animation de croissance + intensité des lumières
   useFrame((state) => {
     if (!enabled || startTimeRef.current === null) return;
 
     const elapsed = state.clock.elapsedTime - startTimeRef.current;
 
-    flowerRefs.current.forEach((ref, i) => {
-      if (!ref) return;
+    // Itérer sur flowerData (pas sur les refs) pour garantir tous les indices
+    for (let i = 0; i < flowerData.length; i++) {
       const data = flowerData[i];
+      const ref = flowerRefs.current[i];
+      const light = lightRefs.current[i];
+
       const growthProgress = Math.max(
         0,
         Math.min(1, (elapsed - data.growthDelay) / 5),
@@ -741,9 +867,27 @@ function Flowers({
 
       const smoothGrowth =
         growthProgress * growthProgress * (3 - 2 * growthProgress);
-      ref.scale.setScalar(data.scale * smoothGrowth);
-      ref.scale.setScalar(data.scale);
-    });
+
+      // Mettre à jour le scale de la fleur
+      if (ref) {
+        ref.scale.setScalar(data.scale * smoothGrowth);
+      }
+
+      // Mettre à jour l'intensité de la pointLight (de 0 à 2 entre 20% et 50%)
+      if (light) {
+        const startThreshold = 0.2;
+        const endThreshold = 0.5;
+        const lightIntensity =
+          smoothGrowth < startThreshold
+            ? 0
+            : smoothGrowth > endThreshold
+              ? 2
+              : ((smoothGrowth - startThreshold) /
+                  (endThreshold - startThreshold)) *
+                2;
+        light.intensity = lightIntensity;
+      }
+    }
   });
 
   // Texture de glow circulaire rouge (comme le papillon mais en rouge)
@@ -765,33 +909,29 @@ function Flowers({
   return (
     <group ref={groupRef}>
       {flowerData.map((data, i) => (
-        <group
-          key={i}
-          ref={(el) => {
-            if (el) flowerRefs.current[i] = el;
-          }}
-          position={[data.x, 0, data.z]}
-          rotation={[0, data.rotation, 0]}
-          scale={0.001}
-        >
-          <primitive object={flowerClones[i]} />
-          {/* Glow comme le papillon */}
+        <group key={i}>
+          {/* Groupe scalé pour la fleur */}
+          <group
+            ref={(el) => {
+              if (el) flowerRefs.current[i] = el;
+            }}
+            position={[data.x, 0, data.z]}
+            rotation={[0, data.rotation, 0]}
+            scale={0.001}
+          >
+            <primitive object={flowerClones[i]} />
+          </group>
+          {/* PointLight en dehors du groupe scalé - position haute pour ne pas éclairer la fleur */}
           <pointLight
-            color="#ff4422"
-            intensity={glowIntensity}
-            distance={glowDistance}
+            ref={(el) => {
+              if (el) lightRefs.current[i] = el;
+            }}
+            color="#a6d647"
+            intensity={0}
+            distance={3}
             decay={2}
-            position={[glowX, glowY, glowZ]}
+            position={[data.x, 1.5, data.z]}
           />
-          {/*<sprite position={[-0.6, 1.8, -0.2]} scale={[1.2, 1.2, 1]}>
-            <spriteMaterial
-              map={glowTexture}
-              transparent
-              opacity={0.2}
-              blending={THREE.AdditiveBlending}
-              depthWrite={false}
-            />
-          </sprite>*/}
         </group>
       ))}
     </group>

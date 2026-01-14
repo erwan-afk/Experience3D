@@ -219,7 +219,7 @@ class GrassMaterial extends THREE.ShaderMaterial {
         // Uniforms pour les lumières des fleurs
         uFlowerLightPositions: { value: flowerLightPositions },
         uFlowerLightIntensities: { value: flowerLightIntensities },
-        uFlowerLightColor: { value: new THREE.Color("#a6d647") },
+        uFlowerLightColor: { value: new THREE.Color("#eac301") },
         uFlowerLightBaseIntensity: { value: 0.02 },
         uFlowerLightDistance: { value: 9.0 },
         uFlowerLightCount: { value: 0 },
@@ -543,10 +543,10 @@ function Butterfly({ enabled = true }: { enabled?: boolean }) {
     canvas.height = 64;
     const ctx = canvas.getContext("2d")!;
     const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-    gradient.addColorStop(0, "rgba(100, 180, 255, 0.6)");
-    gradient.addColorStop(0.3, "rgba(50, 140, 255, 0.3)");
-    gradient.addColorStop(0.6, "rgba(0, 100, 255, 0.1)");
-    gradient.addColorStop(1, "rgba(0, 50, 200, 0)");
+    gradient.addColorStop(0, "rgba(234, 121, 0, 0.6)");
+    gradient.addColorStop(0.3, "rgba(234, 121, 0, 0.3)");
+    gradient.addColorStop(0.6, "rgba(200, 100, 0, 0.1)");
+    gradient.addColorStop(1, "rgba(150, 70, 0, 0)");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, 64, 64);
     return new THREE.CanvasTexture(canvas);
@@ -556,10 +556,10 @@ function Butterfly({ enabled = true }: { enabled?: boolean }) {
 
   return (
     <group ref={groupRef} scale={0.2} position={[0, 4, 0]}>
-      <primitive object={butterflyModel} rotation={[-Math.PI / 2, 0, 0]} />
+      <primitive object={butterflyModel} rotation={[-0.4, 0, 0]} />
       {/* Glow effect - lumière au-dessus du papillon */}
       <pointLight
-        color="#0080FF"
+        color="#ea7900"
         intensity={6}
         distance={6}
         decay={2}
@@ -926,7 +926,7 @@ function Flowers({
             ref={(el) => {
               if (el) lightRefs.current[i] = el;
             }}
-            color="#a6d647"
+            color="#eac301"
             intensity={0}
             distance={3}
             decay={2}

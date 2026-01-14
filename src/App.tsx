@@ -50,6 +50,7 @@ export default function App() {
           ambientParticleEffect={timeline.ambientParticleEffect}
           showAmbientParticles={timeline.showAmbientParticles}
           ambientParticleOpacity={timeline.ambientParticleOpacity}
+          activeAmbientEffects={timeline.activeAmbientEffects}
         />
       </Canvas>
 

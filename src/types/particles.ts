@@ -9,6 +9,7 @@ export type ParticleEffectType =
   | "energy" // Flux d'énergie
   | "rocks" // Éboulement - cailloux qui tombent
   | "grass" // Herbe qui pousse
+  | "butterfly" // Papillon qui vole
   | "none"; // Désactivé
 
 // Configuration d'un effet de particules

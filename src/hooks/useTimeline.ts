@@ -43,6 +43,7 @@ interface UseTimelineReturn {
   showAmbientParticles: boolean;
   ambientParticleOpacity: number;
   ambientParticleEvents: AmbientParticleEvent[];
+  activeAmbientEffects: { effect: ParticleEffectType; opacity: number }[];
 }
 
 export function useTimeline({
@@ -63,8 +64,47 @@ export function useTimeline({
   const transitioningRef = useRef(false);
   const elapsedTimeRef = useRef<number>(0); // Pour tracking précis
   const lastUIUpdateRef = useRef<number>(0); // Pour throttle UI updates
+  const [videoDurationsLoaded, setVideoDurationsLoaded] = useState(false);
 
   const currentScene = scenes[currentIndex];
+
+  // Pré-charger les durées de toutes les vidéos au démarrage
+  useEffect(() => {
+    const videoNumbers = scenes
+      .filter(isVideoScene)
+      .map((scene) => scene.videoNumber);
+
+    const uniqueVideoNumbers = [...new Set(videoNumbers)];
+    let loadedCount = 0;
+
+    uniqueVideoNumbers.forEach((videoNumber) => {
+      const video = document.createElement("video");
+      video.preload = "metadata";
+      video.src = `/scene${videoNumber}.mp4`;
+
+      video.onloadedmetadata = () => {
+        videoDurationsRef.current.set(videoNumber, video.duration * 1000);
+        loadedCount++;
+        if (loadedCount === uniqueVideoNumbers.length) {
+          setVideoDurationsLoaded(true);
+        }
+      };
+
+      video.onerror = () => {
+        // En cas d'erreur, utiliser la durée par défaut
+        videoDurationsRef.current.set(videoNumber, DEFAULT_VIDEO_DURATION);
+        loadedCount++;
+        if (loadedCount === uniqueVideoNumbers.length) {
+          setVideoDurationsLoaded(true);
+        }
+      };
+    });
+
+    // Si pas de vidéos, marquer comme chargé
+    if (uniqueVideoNumbers.length === 0) {
+      setVideoDurationsLoaded(true);
+    }
+  }, [scenes]);
 
   const getSceneDuration = useCallback((scene: Scene): number => {
     if (isVideoScene(scene)) {
@@ -76,10 +116,20 @@ export function useTimeline({
     return scene.duration;
   }, []);
 
-  const totalDuration = scenes.reduce(
-    (acc, scene) => acc + getSceneDuration(scene),
-    0,
-  );
+  // Recalculer quand les durées sont chargées
+  const totalDuration = useMemo(() => {
+    // Dépend de videoDurationsLoaded pour forcer le recalcul
+    if (!videoDurationsLoaded) {
+      // Retourner une estimation en attendant
+      return scenes.reduce((acc, scene) => {
+        if (isVideoScene(scene)) {
+          return acc + DEFAULT_VIDEO_DURATION;
+        }
+        return acc + scene.duration;
+      }, 0);
+    }
+    return scenes.reduce((acc, scene) => acc + getSceneDuration(scene), 0);
+  }, [scenes, getSceneDuration, videoDurationsLoaded]);
 
   const getGlobalElapsedTime = useCallback(() => {
     let elapsed = 0;
@@ -309,36 +359,40 @@ export function useTimeline({
   // Durée du fondu pour les particules ambiantes (ms)
   const AMBIENT_FADE_DURATION = 2000;
 
-  // Vérifier si des particules ambiantes doivent être affichées
-  const activeAmbientEvent = ambientParticleEvents.find(
+  // Vérifier quels effets ambiants sont actifs (peut y en avoir plusieurs)
+  const activeAmbientEvents = ambientParticleEvents.filter(
     (event) =>
       globalTime >= event.startTime &&
       globalTime < event.startTime + event.duration,
   );
 
-  // Calculer l'opacité des particules ambiantes avec fondu
-  let ambientParticleOpacity = 0;
-  if (activeAmbientEvent) {
-    const timeInEvent = globalTime - activeAmbientEvent.startTime;
-    const eventDuration = activeAmbientEvent.duration;
+  // Calculer l'opacité pour chaque effet actif
+  const activeAmbientEffects = activeAmbientEvents.map((event) => {
+    const timeInEvent = globalTime - event.startTime;
+    const eventDuration = event.duration;
 
+    let opacity = 0;
     // Fade in au début
     if (timeInEvent < AMBIENT_FADE_DURATION) {
-      ambientParticleOpacity = timeInEvent / AMBIENT_FADE_DURATION;
+      opacity = timeInEvent / AMBIENT_FADE_DURATION;
     }
     // Fade out à la fin
     else if (eventDuration - timeInEvent < AMBIENT_FADE_DURATION) {
-      ambientParticleOpacity =
-        (eventDuration - timeInEvent) / AMBIENT_FADE_DURATION;
+      opacity = (eventDuration - timeInEvent) / AMBIENT_FADE_DURATION;
     }
     // Pleine opacité au milieu
     else {
-      ambientParticleOpacity = 1;
+      opacity = 1;
     }
-  }
 
+    return { effect: event.effect, opacity };
+  });
+
+  // Pour la compatibilité, garder aussi le premier effet (legacy)
+  const activeAmbientEvent = activeAmbientEvents[0] || null;
+  let ambientParticleOpacity = activeAmbientEffects[0]?.opacity || 0;
   const ambientParticleEffect = activeAmbientEvent?.effect || null;
-  const showAmbientParticles = !!activeAmbientEvent;
+  const showAmbientParticles = activeAmbientEvents.length > 0;
 
   return {
     currentVideo,
@@ -364,5 +418,6 @@ export function useTimeline({
     showAmbientParticles,
     ambientParticleOpacity,
     ambientParticleEvents,
+    activeAmbientEffects, // Liste des effets actifs avec leur opacité
   };
 }

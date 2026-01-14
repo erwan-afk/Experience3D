@@ -1,11 +1,13 @@
 import { useRef, useMemo, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
-import { useGLTF } from "@react-three/drei";
+import { useGLTF, useAnimations } from "@react-three/drei";
 import * as THREE from "three";
+import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import type { ParticleEffectType } from "../../types/particles";
 
-// Précharger le modèle
+// Précharger les modèles
 useGLTF.preload("/small_rocks.glb");
+useGLTF.preload("/butterfly.glb");
 
 // Composant pour les cailloux qui tombent (éboulement)
 function FallingRocks({
@@ -299,6 +301,230 @@ class GrassMaterial extends THREE.ShaderMaterial {
       side: THREE.DoubleSide,
     });
   }
+}
+
+// Simplex noise simplifié pour le vol du papillon
+class SimplexNoise {
+  noise(x: number, y: number, z: number) {
+    return (
+      Math.sin(x * 1.7 + y * 9.2 + z * 3.1) * 0.5 +
+      Math.sin(x * 8.3 + y * 2.8 + z * 5.7) * 0.25
+    );
+  }
+}
+
+const noise = new SimplexNoise();
+
+// Composant pour le papillon qui vole
+function Butterfly({ enabled = true }: { enabled?: boolean }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const { scene, animations } = useGLTF("/butterfly.glb");
+  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+  const startTimeRef = useRef<number | null>(null);
+
+  // État du papillon - physique de steering
+  const pathDataRef = useRef({
+    pos: new THREE.Vector3(0, 6, 0),
+    vel: new THREE.Vector3(0.4, 0, 0),
+    dir: new THREE.Vector3(1, 0, 0),
+    rotX: 0,
+    rotY: 0,
+    rotZ: 0,
+  });
+
+  // Cloner la scène avec SkeletonUtils pour préserver le squelette
+  const butterflyModel = useMemo(() => {
+    const cloned = SkeletonUtils.clone(scene);
+    return cloned;
+  }, [scene]);
+
+  // Initialiser l'animation du modèle
+  useEffect(() => {
+    if (!butterflyModel) return;
+
+    if (animations.length > 0) {
+      mixerRef.current = new THREE.AnimationMixer(butterflyModel);
+
+      // Jouer l'animation "Flying"
+      const flyingClip = animations.find((clip) => clip.name === "Flying");
+      if (flyingClip) {
+        const action = mixerRef.current.clipAction(flyingClip);
+        action.setLoop(THREE.LoopRepeat, Infinity);
+        action.timeScale = 1.5;
+        action.play();
+      }
+    }
+
+    return () => {
+      if (mixerRef.current) {
+        mixerRef.current.stopAllAction();
+      }
+    };
+  }, [butterflyModel, animations]);
+
+  useFrame((state, delta) => {
+    if (!groupRef.current || !enabled) return;
+
+    // Démarrer le timer
+    if (startTimeRef.current === null) {
+      startTimeRef.current = state.clock.elapsedTime;
+    }
+
+    const elapsed = state.clock.elapsedTime - startTimeRef.current;
+    const t = state.clock.elapsedTime;
+    const d = pathDataRef.current;
+
+    // Mettre à jour l'animation du modèle (battement d'ailes)
+    if (mixerRef.current) {
+      mixerRef.current.update(delta);
+    }
+
+    // Entrée progressive depuis le haut (8 secondes)
+    const entryProgress = Math.min(1, elapsed / 8);
+    const easedEntry = entryProgress * entryProgress * (3 - 2 * entryProgress);
+
+    // ================================
+    // 1. TURBULENCE DE L'AIR (Perlin)
+    // ================================
+    const nX = noise.noise(t * 0.3, 0, 0);
+    const nY = noise.noise(0, t * 0.25, 0);
+    const nZ = noise.noise(0, 0, t * 0.3);
+
+    const turbulence = new THREE.Vector3(nX, nY * 0.6, nZ).multiplyScalar(0.35);
+
+    // ================================
+    // 2. WANDER BIOLOGIQUE
+    // ================================
+    const wander = new THREE.Vector3(
+      Math.sin(t * 0.7),
+      Math.sin(t * 1.3) * 0.4,
+      Math.cos(t * 0.6),
+    ).multiplyScalar(0.15);
+
+    // ================================
+    // 3. DIRECTION CIBLE
+    // ================================
+    const desiredDir = d.dir.clone().add(turbulence).add(wander).normalize();
+
+    // Steering (inertie réelle)
+    d.dir.lerp(desiredDir, 0.04);
+
+    // ================================
+    // 4. VITESSE
+    // ================================
+    const speed = 1.2 + Math.sin(t * 4) * 0.3; // battement d'ailes influence la vitesse
+    const targetVel = d.dir.clone().multiplyScalar(speed);
+
+    d.vel.lerp(targetVel, 0.08);
+
+    // ================================
+    // 5. POSITION
+    // ================================
+    d.pos.add(d.vel.clone().multiplyScalar(delta));
+
+    // Limites avec rebond doux (le papillon tourne avant d'atteindre les bords)
+    const margin = 4;
+    const softMargin = 3;
+
+    // Force de répulsion des bords
+    const edgeForce = new THREE.Vector3();
+    if (d.pos.x > softMargin) edgeForce.x -= (d.pos.x - softMargin) * 0.3;
+    if (d.pos.x < -softMargin) edgeForce.x -= (d.pos.x + softMargin) * 0.3;
+    if (d.pos.z > softMargin) edgeForce.z -= (d.pos.z - softMargin) * 0.3;
+    if (d.pos.z < -softMargin) edgeForce.z -= (d.pos.z + softMargin) * 0.3;
+    if (d.pos.y > 4) edgeForce.y -= (d.pos.y - 4) * 0.5;
+    if (d.pos.y < 2) edgeForce.y += (2 - d.pos.y) * 0.5;
+
+    d.dir.add(edgeForce.multiplyScalar(delta * 2));
+    d.dir.normalize();
+
+    // Limites dures
+    d.pos.x = THREE.MathUtils.clamp(d.pos.x, -margin, margin);
+    d.pos.z = THREE.MathUtils.clamp(d.pos.z, -margin, margin);
+    d.pos.y = THREE.MathUtils.clamp(d.pos.y, 1.5, 5);
+
+    // ================================
+    // 6. BATTEMENT D'AILES → PORTANCE
+    // ================================
+    const lift = Math.sin(t * 12) * 0.06;
+
+    // Appliquer la position avec entrée progressive
+    const entryPos = new THREE.Vector3(
+      d.pos.x * easedEntry,
+      d.pos.y + lift,
+      d.pos.z * easedEntry,
+    );
+
+    // Position de départ en haut
+    entryPos.y = 6 + (d.pos.y + lift - 6) * easedEntry;
+
+    groupRef.current.position.copy(entryPos);
+
+    // ================================
+    // 7. ROTATIONS (BIOLOGIQUES)
+    // ================================
+    const forward = d.vel.clone().normalize();
+    const targetYaw = Math.atan2(forward.x, forward.z);
+
+    // Virage → inclinaison (bank)
+    let yawDiff = targetYaw - d.rotY;
+    while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+    while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+
+    const bank = THREE.MathUtils.clamp(yawDiff * 1.5, -0.6, 0.6);
+
+    // Tangage basé sur la vitesse verticale + oscillation
+    const targetPitch = -d.vel.y * 0.3 + Math.sin(t * 6) * 0.04;
+
+    // Interpolation fluide des rotations
+    d.rotY = THREE.MathUtils.lerp(d.rotY, targetYaw, 0.08);
+    d.rotZ = THREE.MathUtils.lerp(d.rotZ, -bank, 0.1);
+    d.rotX = THREE.MathUtils.lerp(d.rotX, targetPitch, 0.08);
+
+    groupRef.current.rotation.set(d.rotX, d.rotY, d.rotZ);
+  });
+
+  // Texture de glow circulaire bleu
+  const glowTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d")!;
+    const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, "rgba(100, 180, 255, 0.6)");
+    gradient.addColorStop(0.3, "rgba(50, 140, 255, 0.3)");
+    gradient.addColorStop(0.6, "rgba(0, 100, 255, 0.1)");
+    gradient.addColorStop(1, "rgba(0, 50, 200, 0)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(canvas);
+  }, []);
+
+  if (!enabled) return null;
+
+  return (
+    <group ref={groupRef} scale={0.2} position={[0, 6, 0]}>
+      <primitive object={butterflyModel} rotation={[-Math.PI / 2, 0, 0]} />
+      {/* Glow effect - lumière décalée sous le papillon */}
+      <pointLight
+        color="#0080FF"
+        intensity={6}
+        distance={6}
+        decay={2}
+        position={[0, -8, 0]}
+      />
+      {/* Halo visuel circulaire */}
+      <sprite scale={[6, 6, 1]}>
+        <spriteMaterial
+          map={glowTexture}
+          transparent
+          opacity={0.4}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </sprite>
+    </group>
+  );
 }
 
 // Composant pour l'herbe qui pousse avec InstancedMesh
@@ -658,6 +884,11 @@ export function AmbientParticles({
   // Utiliser le composant GrowingGrass pour l'effet grass
   if (effect === "grass") {
     return <GrowingGrass enabled={enabled} opacity={opacity} />;
+  }
+
+  // Utiliser le composant Butterfly pour l'effet butterfly
+  if (effect === "butterfly") {
+    return <Butterfly enabled={enabled} />;
   }
 
   return (

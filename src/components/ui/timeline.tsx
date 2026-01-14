@@ -61,6 +61,7 @@ function getAmbientEffectLabel(effect: string): string {
     energy: "Energie",
     rocks: "Eboulement",
     grass: "Herbe",
+    butterfly: "Papillon",
   };
   return effectNames[effect] || effect;
 }

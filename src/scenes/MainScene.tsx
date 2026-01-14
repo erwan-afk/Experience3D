@@ -14,6 +14,7 @@ interface MainSceneProps {
   ambientParticleEffect?: ParticleEffectType | null;
   showAmbientParticles?: boolean;
   ambientParticleOpacity?: number;
+  activeAmbientEffects?: { effect: ParticleEffectType; opacity: number }[];
 }
 
 /**
@@ -28,6 +29,7 @@ export function MainScene({
   ambientParticleEffect = null,
   showAmbientParticles = false,
   ambientParticleOpacity = 1,
+  activeAmbientEffects = [],
 }: MainSceneProps) {
   return (
     <>
@@ -47,12 +49,23 @@ export function MainScene({
         />
       </Suspense>
 
-      {/* Particules ambiantes dans l'espace 3D */}
-      <AmbientParticles
-        effect={ambientParticleEffect || "fireflies"}
-        enabled={showAmbientParticles}
-        opacity={ambientParticleOpacity}
-      />
+      {/* Particules ambiantes dans l'espace 3D - supporte plusieurs effets simultanés */}
+      {activeAmbientEffects.length > 0 ? (
+        activeAmbientEffects.map((activeEffect, index) => (
+          <AmbientParticles
+            key={`${activeEffect.effect}-${index}`}
+            effect={activeEffect.effect}
+            enabled={true}
+            opacity={activeEffect.opacity}
+          />
+        ))
+      ) : (
+        <AmbientParticles
+          effect={ambientParticleEffect || "fireflies"}
+          enabled={showAmbientParticles}
+          opacity={ambientParticleOpacity}
+        />
+      )}
 
       {/* Contrôles FPS: PointerLockControls pour la souris */}
       <PointerLockControls />

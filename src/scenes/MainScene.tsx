@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { PointerLockControls } from "@react-three/drei";
 import { Floor, Lights, UScreen } from "../components/3d";
 import { Player } from "../components/3d/Player";
+import { AmbientParticles } from "../components/3d/AmbientParticles";
 import type { ParticleEffectType } from "../types/particles";
 
 interface MainSceneProps {
@@ -9,6 +10,10 @@ interface MainSceneProps {
   onVideoReady?: (video: HTMLVideoElement) => void;
   particleEffect?: ParticleEffectType;
   particlesEnabled?: boolean;
+  // Particules ambiantes
+  ambientParticleEffect?: ParticleEffectType | null;
+  showAmbientParticles?: boolean;
+  ambientParticleOpacity?: number;
 }
 
 /**
@@ -20,11 +25,14 @@ export function MainScene({
   onVideoReady,
   particleEffect = "fireflies",
   particlesEnabled = false,
+  ambientParticleEffect = null,
+  showAmbientParticles = false,
+  ambientParticleOpacity = 1,
 }: MainSceneProps) {
   return (
     <>
       <Lights />
-      <Floor size={[20, 20]} position={[0, 0, 0]} />
+      <Floor size={[10, 10]} position={[0, 0, 0]} />
 
       <Suspense fallback={null}>
         {/* Écran en U - affiche vidéo OU particules */}
@@ -38,6 +46,13 @@ export function MainScene({
           onVideoReady={onVideoReady}
         />
       </Suspense>
+
+      {/* Particules ambiantes dans l'espace 3D */}
+      <AmbientParticles
+        effect={ambientParticleEffect || "fireflies"}
+        enabled={showAmbientParticles}
+        opacity={ambientParticleOpacity}
+      />
 
       {/* Contrôles FPS: PointerLockControls pour la souris */}
       <PointerLockControls />

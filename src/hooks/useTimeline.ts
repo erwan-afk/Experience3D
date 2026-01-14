@@ -1,10 +1,16 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import type { Scene, PlaybackMode, TransitionState } from "../types/timeline";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import type {
+  Scene,
+  PlaybackMode,
+  TransitionState,
+  AmbientParticleEvent,
+} from "../types/timeline";
 import { isVideoScene, isParticleScene } from "../types/timeline";
 import type { ParticleEffectType } from "../types/particles";
 import {
   defaultScenes,
   DEFAULT_VIDEO_DURATION,
+  ambientParticleEvents,
 } from "../config/timeline.config";
 
 interface UseTimelineOptions {
@@ -32,6 +38,11 @@ interface UseTimelineReturn {
   // Nouvelles valeurs pour les contrôles de scène
   sceneDuration: number;
   sceneElapsedTime: number;
+  // Particules ambiantes
+  ambientParticleEffect: ParticleEffectType | null;
+  showAmbientParticles: boolean;
+  ambientParticleOpacity: number;
+  ambientParticleEvents: AmbientParticleEvent[];
 }
 
 export function useTimeline({
@@ -292,6 +303,43 @@ export function useTimeline({
       : "fireflies";
   const showParticles = currentScene ? isParticleScene(currentScene) : false;
 
+  // Calculer le temps global actuel
+  const globalTime = getGlobalElapsedTime();
+
+  // Durée du fondu pour les particules ambiantes (ms)
+  const AMBIENT_FADE_DURATION = 2000;
+
+  // Vérifier si des particules ambiantes doivent être affichées
+  const activeAmbientEvent = ambientParticleEvents.find(
+    (event) =>
+      globalTime >= event.startTime &&
+      globalTime < event.startTime + event.duration,
+  );
+
+  // Calculer l'opacité des particules ambiantes avec fondu
+  let ambientParticleOpacity = 0;
+  if (activeAmbientEvent) {
+    const timeInEvent = globalTime - activeAmbientEvent.startTime;
+    const eventDuration = activeAmbientEvent.duration;
+
+    // Fade in au début
+    if (timeInEvent < AMBIENT_FADE_DURATION) {
+      ambientParticleOpacity = timeInEvent / AMBIENT_FADE_DURATION;
+    }
+    // Fade out à la fin
+    else if (eventDuration - timeInEvent < AMBIENT_FADE_DURATION) {
+      ambientParticleOpacity =
+        (eventDuration - timeInEvent) / AMBIENT_FADE_DURATION;
+    }
+    // Pleine opacité au milieu
+    else {
+      ambientParticleOpacity = 1;
+    }
+  }
+
+  const ambientParticleEffect = activeAmbientEvent?.effect || null;
+  const showAmbientParticles = !!activeAmbientEvent;
+
   return {
     currentVideo,
     particleEffect,
@@ -311,5 +359,10 @@ export function useTimeline({
     fadeOpacity,
     sceneDuration: currentSceneDuration,
     sceneElapsedTime: elapsedTime,
+    // Particules ambiantes
+    ambientParticleEffect,
+    showAmbientParticles,
+    ambientParticleOpacity,
+    ambientParticleEvents,
   };
 }

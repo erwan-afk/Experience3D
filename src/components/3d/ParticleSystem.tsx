@@ -182,11 +182,25 @@ export function ParticleSystem({
           break;
 
         case "dust":
-          // Flottement lent
-          particle.position.y +=
-            Math.sin(time * 0.5 + particle.phase) * 0.003 * config.speed;
-          particle.position.x +=
-            Math.cos(time * 0.3 + particle.phase) * 0.002 * config.speed;
+          // Effet de vagues - les particules montent et descendent en vagues
+          const waveFreq = 0.8; // Fréquence des vagues
+          const waveAmp = 0.4; // Amplitude verticale
+          const waveSpeed = time * config.speed;
+          // Vague basée sur la position X et Z pour créer des ondulations
+          const waveOffset =
+            particle.originalPosition.x * 0.5 +
+            particle.originalPosition.z * 0.3;
+          particle.position.y =
+            particle.originalPosition.y +
+            Math.sin(waveSpeed * waveFreq + waveOffset + particle.phase) *
+              waveAmp;
+          // Léger mouvement horizontal pour plus de naturel
+          particle.position.x =
+            particle.originalPosition.x +
+            Math.sin(waveSpeed * 0.3 + particle.phase) * 0.1;
+          particle.position.z =
+            particle.originalPosition.z +
+            Math.cos(waveSpeed * 0.2 + particle.phase) * 0.1;
           break;
 
         case "energy":

@@ -7,9 +7,9 @@ export const particleEffects: Record<ParticleEffectType, ParticleEffectConfig> =
   {
     fireflies: {
       id: "fireflies",
-      name: "Lucioles",
-      particleCount: 800,
-      color: ["#ffff88", "#88ff88", "#ffffff"],
+      name: "Braises",
+      particleCount: 6000,
+      color: ["#ff4500", "#ff6b35", "#ff8c00", "#ffa500", "#ffcc00", "#ff2200"],
       size: 0.15,
       speed: 0.3,
       spread: [8, 4, 6],
@@ -43,9 +43,9 @@ export const particleEffects: Record<ParticleEffectType, ParticleEffectConfig> =
 
     dust: {
       id: "dust",
-      name: "Poussieres",
-      particleCount: 2500,
-      color: ["#ffddaa", "#ffffff"],
+      name: "Sable",
+      particleCount: 10000,
+      color: ["#d4a574", "#c9956c", "#e6c9a8", "#b8860b", "#deb887", "#f5deb3"],
       size: 0.05,
       speed: 0.2,
       spread: [8, 4, 6],

@@ -7,6 +7,8 @@ export type ParticleEffectType =
   | "stars" // Étoiles scintillantes
   | "dust" // Poussières dans la lumière
   | "energy" // Flux d'énergie
+  | "rocks" // Éboulement - cailloux qui tombent
+  | "grass" // Herbe qui pousse
   | "none"; // Désactivé
 
 // Configuration d'un effet de particules

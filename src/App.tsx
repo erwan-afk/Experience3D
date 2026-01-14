@@ -47,6 +47,9 @@ export default function App() {
           onVideoReady={handleVideoReady}
           particleEffect={timeline.particleEffect}
           particlesEnabled={timeline.showParticles}
+          ambientParticleEffect={timeline.ambientParticleEffect}
+          showAmbientParticles={timeline.showAmbientParticles}
+          ambientParticleOpacity={timeline.ambientParticleOpacity}
         />
       </Canvas>
 
@@ -71,6 +74,8 @@ export default function App() {
         showParticles={timeline.showParticles}
         sceneDuration={timeline.sceneDuration}
         sceneElapsedTime={timeline.sceneElapsedTime}
+        ambientParticleEvents={timeline.ambientParticleEvents}
+        showAmbientParticles={timeline.showAmbientParticles}
       />
     </div>
   );

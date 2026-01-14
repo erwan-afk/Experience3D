@@ -8,15 +8,15 @@ import type { FloorProps } from "../../types";
  */
 export function Floor({ size = [5, 5], position = [0, 0, 0] }: FloorProps) {
   const controls = useControls("Sol Réflectif", {
-    blur: { value: 260, min: 0, max: 2000, step: 10 },
+    blur: { value: 220, min: 0, max: 2000, step: 10 },
     resolution: { value: 1024, min: 256, max: 2048, step: 256 },
-    mirror: { value: 0.75, min: 0, max: 1, step: 0.01 },
-    mixBlur: { value: 20, min: 0, max: 20, step: 0.5 },
-    mixStrength: { value: 2, min: 0, max: 5, step: 0.1 },
+    mirror: { value: 1, min: 0, max: 1, step: 0.01 },
+    mixBlur: { value: 3.5, min: 0, max: 20, step: 0.5 },
+    mixStrength: { value: 2.1, min: 0, max: 5, step: 0.1 },
     color: "#ffffff",
     metalness: { value: 0, min: 0, max: 1, step: 0.01 },
     roughness: { value: 1, min: 0, max: 1, step: 0.01 },
-    depthScale: { value: 0.8, min: 0, max: 5, step: 0.1 },
+    depthScale: { value: 1.3, min: 0, max: 5, step: 0.1 },
     minDepthThreshold: { value: 0.4, min: 0, max: 1, step: 0.01 },
     maxDepthThreshold: { value: 1.4, min: 0, max: 5, step: 0.1 },
   });

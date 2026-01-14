@@ -15,6 +15,13 @@ export interface ParticleScene {
 
 export type Scene = VideoScene | ParticleScene;
 
+// Particules ambiantes dans l'espace 3D (superposées aux vidéos/particules écran)
+export interface AmbientParticleEvent {
+  effect: ParticleEffectType;
+  startTime: number; // ms depuis le début de la timeline
+  duration: number; // ms
+}
+
 export type PlaybackMode = "auto" | "manual";
 
 export type TransitionState = "idle" | "fading-out" | "fading-in";

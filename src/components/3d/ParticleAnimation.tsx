@@ -54,6 +54,18 @@ export function useParticleTexture({
     if (!ctx) return;
     ctxRef.current = ctx;
 
+    // Initialiser le fond selon l'effet
+    const initialBgColors: Record<string, string> = {
+      dust: "#3e2f23", // Sable foncé
+      fireflies: "#000000",
+      snow: "#000000",
+      stars: "#000000",
+      energy: "#000000",
+      none: "#000000",
+    };
+    ctx.fillStyle = initialBgColors[effect] || "#000000";
+    ctx.fillRect(0, 0, width, height);
+
     // Créer la texture
     const texture = new THREE.CanvasTexture(canvas);
     texture.minFilter = THREE.LinearFilter;
@@ -114,8 +126,17 @@ export function useParticleTexture({
     const particles = particlesRef.current;
     const time = (timeRef.current += delta);
 
-    // Effacer avec un fond sombre semi-transparent pour effet de traînée
-    ctx.fillStyle = "rgba(0, 0, 0, 0.15)";
+    // Effacer avec un fond semi-transparent pour effet de traînée
+    // Couleur de fond selon l'effet
+    const bgColors: Record<string, string> = {
+      dust: "rgba(62, 47, 35, 0.15)", // Sable foncé
+      fireflies: "rgba(0, 0, 0, 0.15)",
+      snow: "rgba(0, 0, 0, 0.15)",
+      stars: "rgba(0, 0, 0, 0.15)",
+      energy: "rgba(0, 0, 0, 0.15)",
+      none: "rgba(0, 0, 0, 0.15)",
+    };
+    ctx.fillStyle = bgColors[effect] || "rgba(0, 0, 0, 0.15)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Position de la souris en pixels sur le canvas
@@ -170,10 +191,21 @@ export function useParticleTexture({
           break;
 
         case "dust":
-          particle.x +=
-            Math.sin(time * 0.3 + particle.phase) * 0.3 * config.speed;
-          particle.y +=
-            Math.cos(time * 0.5 + particle.phase) * 0.2 * config.speed;
+          // Effet de vagues - les particules montent et descendent en vagues
+          const waveFreq = 0.8;
+          const waveAmp = 30; // Amplitude en pixels
+          const waveSpeed = time * config.speed;
+          // Vague basée sur la position X pour créer des ondulations horizontales
+          const waveOffset =
+            particle.originalX * 0.01 + particle.originalY * 0.005;
+          particle.y =
+            particle.originalY +
+            Math.sin(waveSpeed * waveFreq + waveOffset + particle.phase) *
+              waveAmp;
+          // Léger mouvement horizontal
+          particle.x =
+            particle.originalX +
+            Math.sin(waveSpeed * 0.3 + particle.phase) * 10;
           break;
 
         case "energy":
@@ -212,7 +244,7 @@ export function useParticleTexture({
         0,
         particle.x,
         particle.y,
-        particle.size * 2
+        particle.size * 2,
       );
       gradient.addColorStop(0, particle.color);
       gradient.addColorStop(1, "transparent");

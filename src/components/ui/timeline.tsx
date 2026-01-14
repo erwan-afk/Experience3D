@@ -1,7 +1,11 @@
 import { useRef } from "react";
 import { Play, Pause, RefreshCw, Hand, Volume2, VolumeX } from "lucide-react";
 import { Button } from "./button";
-import type { Scene, PlaybackMode } from "../../types/timeline";
+import type {
+  Scene,
+  PlaybackMode,
+  AmbientParticleEvent,
+} from "../../types/timeline";
 import { isVideoScene } from "../../types/timeline";
 
 interface TimelineProps {
@@ -22,6 +26,9 @@ interface TimelineProps {
   showParticles: boolean;
   sceneDuration: number; // Durée de la scène actuelle en ms
   sceneElapsedTime: number; // Temps écoulé dans la scène actuelle en ms
+  // Particules ambiantes
+  ambientParticleEvents: AmbientParticleEvent[];
+  showAmbientParticles: boolean;
 }
 
 function formatTime(ms: number): string {
@@ -36,13 +43,26 @@ function getSceneLabel(scene: Scene): string {
     return `Video ${scene.videoNumber}`;
   }
   const effectNames: Record<string, string> = {
-    fireflies: "Lucioles",
+    fireflies: "Braises",
     snow: "Neige",
     stars: "Etoiles",
-    dust: "Poussiere",
+    dust: "Sable",
     energy: "Energie",
   };
   return effectNames[scene.effect] || scene.effect;
+}
+
+function getAmbientEffectLabel(effect: string): string {
+  const effectNames: Record<string, string> = {
+    fireflies: "Feu",
+    snow: "Neige",
+    stars: "Etoiles",
+    dust: "Sable",
+    energy: "Energie",
+    rocks: "Eboulement",
+    grass: "Herbe",
+  };
+  return effectNames[effect] || effect;
 }
 
 export function Timeline({
@@ -62,6 +82,8 @@ export function Timeline({
   showParticles,
   sceneDuration,
   sceneElapsedTime,
+  ambientParticleEvents,
+  showAmbientParticles,
 }: TimelineProps) {
   const progressBarRef = useRef<HTMLDivElement>(null);
 
@@ -193,12 +215,12 @@ export function Timeline({
         </span>
       </div>
 
-      {/* Timeline des segments */}
+      {/* Timeline des segments - Ligne 1: Scènes principales */}
       <div
         style={{
           display: "flex",
-          height: "36px",
-          borderRadius: "6px",
+          height: "32px",
+          borderRadius: "6px 6px 0 0",
           overflow: "hidden",
           position: "relative",
           backgroundColor: "rgba(255, 255, 255, 0.1)",
@@ -276,6 +298,73 @@ export function Timeline({
         })}
       </div>
 
+      {/* Timeline - Ligne 2: Particules ambiantes */}
+      <div
+        style={{
+          display: "flex",
+          height: "20px",
+          borderRadius: "0 0 6px 6px",
+          overflow: "hidden",
+          position: "relative",
+          backgroundColor: "rgba(255, 255, 255, 0.05)",
+          marginTop: "2px",
+        }}
+      >
+        {/* Marqueur de position actuelle */}
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: `${(elapsedTime / totalDuration) * 100}%`,
+            width: "2px",
+            height: "100%",
+            backgroundColor: "rgba(255, 255, 255, 0.6)",
+            transition: "left 100ms linear",
+            pointerEvents: "none",
+            zIndex: 2,
+          }}
+        />
+
+        {/* Événements de particules ambiantes */}
+        {ambientParticleEvents.map((event, index) => {
+          const startPercent = (event.startTime / totalDuration) * 100;
+          const widthPercent = (event.duration / totalDuration) * 100;
+          const isActive = showAmbientParticles;
+
+          return (
+            <div
+              key={index}
+              style={{
+                position: "absolute",
+                left: `${startPercent}%`,
+                width: `${widthPercent}%`,
+                height: "100%",
+                backgroundColor: isActive
+                  ? "rgba(255, 100, 50, 0.7)"
+                  : "rgba(255, 100, 50, 0.4)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: "3px",
+                transition: "background-color 200ms",
+              }}
+            >
+              <span
+                style={{
+                  color: "white",
+                  fontSize: "9px",
+                  fontWeight: isActive ? "bold" : "normal",
+                  textShadow: "0 1px 2px rgba(0,0,0,0.5)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {getAmbientEffectLabel(event.effect)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
       {/* Temps global */}
       <div
         style={{
@@ -307,7 +396,18 @@ export function Timeline({
                 backgroundColor: "rgba(168, 85, 247, 0.7)",
               }}
             />
-            Particules
+            Ecran
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+            <div
+              style={{
+                width: "10px",
+                height: "10px",
+                borderRadius: "2px",
+                backgroundColor: "rgba(255, 100, 50, 0.7)",
+              }}
+            />
+            Ambiant
           </div>
         </div>
         <span style={{ fontFamily: "monospace" }}>

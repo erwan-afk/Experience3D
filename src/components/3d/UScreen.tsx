@@ -1,5 +1,6 @@
 import { useRef, useMemo, useEffect, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
+import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { useControls } from "leva";
 import type { ParticleEffectType } from "../../types/particles";
@@ -8,7 +9,18 @@ import {
   particleVertexShader,
   particleFragmentShader,
 } from "../../shaders/particles";
-
+import {
+  FBO,
+  createPositionTexture,
+  extractPositions,
+  getOptimalTextureSize,
+} from "../../utils/FBO";
+import {
+  simulationVertexShader,
+  simulationFragmentShader,
+  morphingVertexShader,
+  morphingFragmentShader,
+} from "../../shaders/morphing";
 interface UScreenProps {
   videoUrl?: string;
   particleEffect?: ParticleEffectType;
@@ -18,6 +30,9 @@ interface UScreenProps {
   depth?: number;
   cornerRadius?: number;
   onVideoReady?: (video: HTMLVideoElement) => void;
+  onTextureReady?: (texture: THREE.Texture | null) => void;
+  transitionOut?: boolean;
+  onTransitionComplete?: () => void;
 }
 
 // Résolution du canvas de particules (identique aux vidéos)
@@ -48,6 +63,9 @@ interface ParticleData {
   phase: number;
   size: number;
   color: [number, number, number];
+  // Pour l'effet de vague sur les veines
+  wavePhase: number; // Phase basée sur la position Y normalisée (0 = bas, 1 = haut)
+  branchDepth: number; // Profondeur de la branche (0 = tronc principal)
 }
 
 /**
@@ -182,6 +200,180 @@ function createUShapeGeometry(
 }
 
 /**
+ * Génère un réseau de veines 2D pour l'effet veins
+ */
+function generateVeinNetwork2D(
+  particleCount: number,
+  numRoots: number,
+  maxDepth: number,
+  branchProbability: number,
+): { x: number; y: number; depth: number }[] {
+  const segments: {
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    depth: number;
+  }[] = [];
+  const segmentLength = 60;
+  const maxSegments = 2000;
+
+  for (let root = 0; root < numRoots; root++) {
+    if (segments.length >= maxSegments) break;
+
+    // Point de départ en bas du canvas
+    const startX = Math.random() * PARTICLE_CANVAS_WIDTH;
+    const startY =
+      PARTICLE_CANVAS_HEIGHT * 0.95 +
+      Math.random() * (PARTICLE_CANVAS_HEIGHT * 0.05);
+
+    // Direction initiale vers le haut
+    let dirX = (Math.random() - 0.5) * 0.4;
+    let dirY = -0.8 - Math.random() * 0.2;
+    const len = Math.sqrt(dirX * dirX + dirY * dirY);
+    dirX /= len;
+    dirY /= len;
+
+    // Queue de branches à traiter
+    const queue: {
+      x: number;
+      y: number;
+      dirX: number;
+      dirY: number;
+      depth: number;
+      remaining: number;
+    }[] = [
+      {
+        x: startX,
+        y: startY,
+        dirX,
+        dirY,
+        depth: 0,
+        remaining: 20,
+      },
+    ];
+
+    while (queue.length > 0 && segments.length < maxSegments) {
+      const branch = queue.shift()!;
+
+      if (branch.remaining <= 0) continue;
+      if (branch.y < 20) continue;
+      if (branch.x < 20 || branch.x > PARTICLE_CANVAS_WIDTH - 20) continue;
+
+      // Calculer le point suivant
+      const actualLength = segmentLength * (1 - branch.depth * 0.1);
+      const nextX = branch.x + branch.dirX * actualLength;
+      const nextY = branch.y + branch.dirY * actualLength;
+
+      // Ajouter le segment
+      segments.push({
+        x1: branch.x,
+        y1: branch.y,
+        x2: nextX,
+        y2: nextY,
+        depth: branch.depth,
+      });
+
+      // Continuer la branche avec déviation
+      let newDirX = branch.dirX + (Math.random() - 0.5) * 0.4;
+      let newDirY = branch.dirY + (Math.random() - 0.5) * 0.2;
+      const newLen = Math.sqrt(newDirX * newDirX + newDirY * newDirY);
+      newDirX /= newLen;
+      newDirY /= newLen;
+
+      queue.push({
+        x: nextX,
+        y: nextY,
+        dirX: newDirX,
+        dirY: newDirY,
+        depth: branch.depth,
+        remaining: branch.remaining - 1,
+      });
+
+      // Créer des branches latérales
+      if (
+        Math.random() < branchProbability &&
+        branch.depth < maxDepth &&
+        branch.remaining > 4
+      ) {
+        const side = Math.random() > 0.5 ? 1 : -1;
+        const angle = side * (0.5 + Math.random() * 0.4);
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const branchDirX = branch.dirX * cos - branch.dirY * sin;
+        const branchDirY = branch.dirX * sin + branch.dirY * cos;
+
+        queue.push({
+          x: nextX,
+          y: nextY,
+          dirX: branchDirX,
+          dirY: branchDirY,
+          depth: branch.depth + 1,
+          remaining: Math.floor(branch.remaining * 0.5),
+        });
+      }
+    }
+  }
+
+  // Distribuer les particules sur les segments
+  const positions: { x: number; y: number; depth: number }[] = [];
+
+  if (segments.length === 0) {
+    // Fallback: positions aléatoires
+    for (let i = 0; i < particleCount; i++) {
+      positions.push({
+        x: Math.random() * PARTICLE_CANVAS_WIDTH,
+        y: Math.random() * PARTICLE_CANVAS_HEIGHT,
+        depth: 0,
+      });
+    }
+    return positions;
+  }
+
+  // Calculer la longueur totale
+  let totalLength = 0;
+  const segmentLengths: number[] = [];
+  for (const seg of segments) {
+    const len = Math.sqrt((seg.x2 - seg.x1) ** 2 + (seg.y2 - seg.y1) ** 2);
+    segmentLengths.push(len);
+    totalLength += len;
+  }
+
+  // Distribuer les particules
+  for (let i = 0; i < particleCount; i++) {
+    const targetLen = Math.random() * totalLength;
+    let accLen = 0;
+    let selectedSeg = segments[0];
+    let t = 0;
+
+    for (let j = 0; j < segments.length; j++) {
+      if (accLen + segmentLengths[j] >= targetLen) {
+        selectedSeg = segments[j];
+        t = (targetLen - accLen) / segmentLengths[j];
+        break;
+      }
+      accLen += segmentLengths[j];
+    }
+
+    // Interpoler + jitter
+    const jitter = 15 * (1 - selectedSeg.depth * 0.15);
+    positions.push({
+      x:
+        selectedSeg.x1 +
+        (selectedSeg.x2 - selectedSeg.x1) * t +
+        (Math.random() - 0.5) * jitter,
+      y:
+        selectedSeg.y1 +
+        (selectedSeg.y2 - selectedSeg.y1) * t +
+        (Math.random() - 0.5) * jitter,
+      depth: selectedSeg.depth,
+    });
+  }
+
+  return positions;
+}
+
+/**
  * Parse une couleur hex en RGB normalisé
  */
 function hexToRgbNormalized(hex: string): [number, number, number] {
@@ -208,9 +400,36 @@ export function UScreen({
   depth = 10,
   cornerRadius = 1,
   onVideoReady,
+  onTextureReady,
+  transitionOut = false,
+  onTransitionComplete,
 }: UScreenProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const { camera, gl } = useThree();
+
+  // État pour la transition de descente
+  const [yOffset, setYOffset] = useState(0);
+  const transitionCompleteRef = useRef(false);
+
+  // Réinitialiser la position quand transitionOut redevient false
+  useEffect(() => {
+    if (!transitionOut) {
+      setYOffset(0);
+      transitionCompleteRef.current = false;
+    }
+  }, [transitionOut]);
+
+  // Charger les modèles GLB pour le morphing (seulement si effet morphing)
+  const isMorphing = particleEffect === "morphing" && showParticles;
+  const gltf1 = useGLTF(
+    isMorphing ? "/models/morph1.glb" : "/models/morph1.glb",
+  );
+  const gltf2 = useGLTF(
+    isMorphing ? "/models/morph2.glb" : "/models/morph2.glb",
+  );
+  const gltf3 = useGLTF(
+    isMorphing ? "/models/morph3.glb" : "/models/morph3.glb",
+  );
 
   const [videoTexture, setVideoTexture] = useState<THREE.VideoTexture | null>(
     null,
@@ -219,7 +438,9 @@ export function UScreen({
 
   // Système de particules GPU avec physique CPU
   const particleSceneRef = useRef<THREE.Scene | null>(null);
-  const particleCameraRef = useRef<THREE.OrthographicCamera | null>(null);
+  const particleCameraRef = useRef<
+    THREE.OrthographicCamera | THREE.PerspectiveCamera | null
+  >(null);
   const renderTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const particleMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
   const particlePointsRef = useRef<THREE.Points | null>(null);
@@ -228,12 +449,30 @@ export function UScreen({
     null,
   );
 
+  // Système de morphing 3D GPGPU
+  const morphingFBORef = useRef<FBO | null>(null);
+  const morphingSimMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
+  const morphingRenderMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
+  const morphingTexturesRef = useRef<{
+    textureA: THREE.DataTexture | null;
+    textureB: THREE.DataTexture | null;
+    textureC: THREE.DataTexture | null;
+  }>({ textureA: null, textureB: null, textureC: null });
+
   const controls = useControls("Écran U", {
     width: { value: width, min: 5, max: 20, step: 0.5 },
     height: { value: height, min: 1, max: 10, step: 0.5 },
     depth: { value: depth, min: 5, max: 20, step: 0.5 },
     cornerRadius: { value: cornerRadius, min: 0.1, max: 3, step: 0.1 },
     emissiveIntensity: { value: 1, min: 0, max: 3, step: 0.1 },
+  });
+
+  // Contrôles pour la caméra du morphing
+  const morphingControls = useControls("Morphing Camera", {
+    zoom: { value: 1, min: 0.2, max: 3, step: 0.1 },
+    offsetY: { value: 90, min: -200, max: 200, step: 10 },
+    buildDuration: { value: 8, min: 1, max: 30, step: 1 }, // Durée état "build" (forme stable) en secondes
+    morphDuration: { value: 3, min: 0.5, max: 10, step: 0.5 }, // Durée état "morphing" (transition) en secondes
   });
 
   // Création de la vidéo
@@ -281,6 +520,10 @@ export function UScreen({
         particleMaterialRef.current.dispose();
         particleMaterialRef.current = null;
       }
+      if (morphingFBORef.current) {
+        morphingFBORef.current.dispose();
+        morphingFBORef.current = null;
+      }
       particleSceneRef.current = null;
       particleCameraRef.current = null;
       particlePointsRef.current = null;
@@ -289,6 +532,269 @@ export function UScreen({
       return;
     }
 
+    // === CAS MORPHING 3D ===
+    if (particleEffect === "morphing") {
+      const config = particleEffects.morphing;
+      const textureSize = getOptimalTextureSize(config.particleCount);
+
+      // Extraire les positions des modèles GLB
+      const getPositionsFromGLTF = (
+        gltf: any,
+        scale: number = 1,
+      ): Float32Array => {
+        let allPositions: number[] = [];
+        gltf.scene.traverse((child: any) => {
+          if (child.isMesh && child.geometry) {
+            const pos = extractPositions(child.geometry);
+            // Appliquer aussi les transformations du mesh (position, rotation, scale)
+            const matrix = child.matrixWorld;
+            for (let i = 0; i < pos.length; i += 3) {
+              const v = new THREE.Vector3(pos[i], pos[i + 1], pos[i + 2]);
+              v.applyMatrix4(matrix);
+              allPositions.push(v.x * scale, v.y * scale, v.z * scale);
+            }
+          }
+        });
+        return new Float32Array(allPositions);
+      };
+
+      // Calculer la bounding box pour normaliser l'échelle
+      const getBoundingBox = (
+        positions: Float32Array,
+      ): { min: THREE.Vector3; max: THREE.Vector3; size: number } => {
+        const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+        const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+        for (let i = 0; i < positions.length; i += 3) {
+          min.x = Math.min(min.x, positions[i]);
+          min.y = Math.min(min.y, positions[i + 1]);
+          min.z = Math.min(min.z, positions[i + 2]);
+          max.x = Math.max(max.x, positions[i]);
+          max.y = Math.max(max.y, positions[i + 1]);
+          max.z = Math.max(max.z, positions[i + 2]);
+        }
+        const size = Math.max(max.x - min.x, max.y - min.y, max.z - min.z);
+        return { min, max, size };
+      };
+
+      // Extraire et normaliser les positions
+      const rawPos1 = getPositionsFromGLTF(gltf1);
+      const rawPos2 = getPositionsFromGLTF(gltf2);
+      const rawPos3 = getPositionsFromGLTF(gltf3);
+
+      // Normaliser chaque modèle individuellement à la même taille cible
+      const bb1 = getBoundingBox(rawPos1);
+      const bb2 = getBoundingBox(rawPos2);
+      const bb3 = getBoundingBox(rawPos3);
+
+      // Échelle cible (chaque modèle fera environ 420 unités pour remplir l'écran)
+      const targetSize = 300;
+      const scale1 = bb1.size > 0 ? targetSize / bb1.size : 1;
+      const scale2 = bb2.size > 0 ? targetSize / bb2.size : 1;
+      const scale3 = bb3.size > 0 ? targetSize / bb3.size : 1;
+
+      console.log("Morphing GLB info:", {
+        model1: {
+          vertexCount: rawPos1.length / 3,
+          size: bb1.size,
+          scale: scale1,
+        },
+        model2: {
+          vertexCount: rawPos2.length / 3,
+          size: bb2.size,
+          scale: scale2,
+        },
+        model3: {
+          vertexCount: rawPos3.length / 3,
+          size: bb3.size,
+          scale: scale3,
+        },
+      });
+
+      // Appliquer la normalisation individuelle + centrer chaque modèle
+      const pos1 = new Float32Array(rawPos1.length);
+      const pos2 = new Float32Array(rawPos2.length);
+      const pos3 = new Float32Array(rawPos3.length);
+
+      // Centrer et normaliser modèle 1
+      const center1 = new THREE.Vector3()
+        .addVectors(bb1.min, bb1.max)
+        .multiplyScalar(0.5);
+      for (let i = 0; i < rawPos1.length; i += 3) {
+        pos1[i] = (rawPos1[i] - center1.x) * scale1;
+        pos1[i + 1] = (rawPos1[i + 1] - center1.y) * scale1;
+        pos1[i + 2] = (rawPos1[i + 2] - center1.z) * scale1;
+      }
+
+      // Centrer et normaliser modèle 2
+      const center2 = new THREE.Vector3()
+        .addVectors(bb2.min, bb2.max)
+        .multiplyScalar(0.5);
+      for (let i = 0; i < rawPos2.length; i += 3) {
+        pos2[i] = (rawPos2[i] - center2.x) * scale2;
+        pos2[i + 1] = (rawPos2[i + 1] - center2.y) * scale2;
+        pos2[i + 2] = (rawPos2[i + 2] - center2.z) * scale2;
+      }
+
+      // Centrer et normaliser modèle 3
+      const center3 = new THREE.Vector3()
+        .addVectors(bb3.min, bb3.max)
+        .multiplyScalar(0.5);
+      for (let i = 0; i < rawPos3.length; i += 3) {
+        pos3[i] = (rawPos3[i] - center3.x) * scale3;
+        pos3[i + 1] = (rawPos3[i + 1] - center3.y) * scale3;
+        pos3[i + 2] = (rawPos3[i + 2] - center3.z) * scale3;
+      }
+
+      const textureA = createPositionTexture(pos1, textureSize);
+      const textureB = createPositionTexture(pos2, textureSize);
+      const textureC = createPositionTexture(pos3, textureSize);
+      morphingTexturesRef.current = { textureA, textureB, textureC };
+
+      // Créer le matériau de simulation
+      const simMaterial = new THREE.ShaderMaterial({
+        vertexShader: simulationVertexShader,
+        fragmentShader: simulationFragmentShader,
+        uniforms: {
+          uTextureA: { value: textureA },
+          uTextureB: { value: textureB },
+          uTextureC: { value: textureC },
+          uMorphT: { value: 0 }, // 0 = forme actuelle, 1 = forme suivante
+          uFormIndex: { value: 0 }, // 0, 1 ou 2
+          uScreenOffset: { value: 1 }, // Position X: 1 = droite, 0 = centre, -1 = gauche
+          uTime: { value: 0 },
+        },
+      });
+      morphingSimMaterialRef.current = simMaterial;
+
+      // Créer le FBO
+      const fbo = new FBO({
+        width: textureSize,
+        height: textureSize,
+        renderer: gl,
+        simulationMaterial: simMaterial,
+      });
+      morphingFBORef.current = fbo;
+
+      // Créer la scène de rendu des particules
+      const particleScene = new THREE.Scene();
+      particleScene.background = new THREE.Color(0x000000);
+      particleSceneRef.current = particleScene;
+
+      // Caméra orthographique pour voir les 3 écrans (résolution réduite pour performance)
+      const morphRenderWidth = 1920;
+      const morphRenderHeight = 360;
+      // L'écran en U fait 5760x1080, ratio = 5.33
+      // viewWidth définit l'espace 3D visible, chaque écran = viewWidth/3
+      const viewWidth = 3000;
+      const viewHeight = viewWidth / (5760 / 1080); // Garder le ratio de l'écran final
+      const particleCamera = new THREE.OrthographicCamera(
+        -viewWidth / 2,
+        viewWidth / 2,
+        viewHeight / 2,
+        -viewHeight / 2,
+        0.1,
+        2000,
+      );
+      particleCamera.position.set(0, 0, 500);
+      particleCamera.lookAt(0, 0, 0);
+      particleCameraRef.current = particleCamera;
+
+      // RenderTarget pour le rendu final
+      const renderTarget = new THREE.WebGLRenderTarget(
+        morphRenderWidth,
+        morphRenderHeight,
+        {
+          minFilter: THREE.LinearFilter,
+          magFilter: THREE.LinearFilter,
+          format: THREE.RGBAFormat,
+        },
+      );
+      renderTargetRef.current = renderTarget;
+
+      // Créer les particules
+      const count = textureSize * textureSize;
+      const positions = new Float32Array(count * 3);
+      const references = new Float32Array(count * 2);
+      const sizes = new Float32Array(count);
+      const colors = new Float32Array(count * 3);
+      const alphas = new Float32Array(count);
+
+      const colorOptions = Array.isArray(config.color)
+        ? config.color
+        : [config.color];
+
+      for (let i = 0; i < count; i++) {
+        positions[i * 3] = 0;
+        positions[i * 3 + 1] = 0;
+        positions[i * 3 + 2] = 0;
+
+        references[i * 2] = (i % textureSize) / textureSize;
+        references[i * 2 + 1] = Math.floor(i / textureSize) / textureSize;
+
+        sizes[i] = config.size * 120 * (0.5 + Math.random() * 0.5);
+
+        const colorHex =
+          colorOptions[Math.floor(Math.random() * colorOptions.length)];
+        const color = new THREE.Color(colorHex);
+        colors[i * 3] = color.r;
+        colors[i * 3 + 1] = color.g;
+        colors[i * 3 + 2] = color.b;
+
+        alphas[i] = 0.8 + Math.random() * 0.2;
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(positions, 3),
+      );
+      geometry.setAttribute(
+        "aReference",
+        new THREE.BufferAttribute(references, 2),
+      );
+      geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+      geometry.setAttribute("aColor", new THREE.BufferAttribute(colors, 3));
+      geometry.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
+
+      // Matériau de rendu des particules
+      const renderMaterial = new THREE.ShaderMaterial({
+        vertexShader: morphingVertexShader,
+        fragmentShader: morphingFragmentShader,
+        uniforms: {
+          uPositions: { value: fbo.texture },
+          uSize: { value: config.size },
+          uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+          uResolution: {
+            value: new THREE.Vector2(morphRenderWidth, morphRenderHeight),
+          },
+          uProgress: { value: 0 },
+          uTime: { value: 0 },
+        },
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      morphingRenderMaterialRef.current = renderMaterial;
+
+      const points = new THREE.Points(geometry, renderMaterial);
+      particlePointsRef.current = points;
+      particleScene.add(points);
+
+      setParticleTexture(renderTarget.texture);
+
+      return () => {
+        fbo.dispose();
+        geometry.dispose();
+        simMaterial.dispose();
+        renderMaterial.dispose();
+        textureA.dispose();
+        textureB.dispose();
+        textureC.dispose();
+        renderTarget.dispose();
+      };
+    }
+
+    // === CAS PARTICULES 2D STANDARD ===
     const config = particleEffects[particleEffect];
     const count = config.particleCount;
 
@@ -327,11 +833,40 @@ export function UScreen({
       : [config.color];
     const particles: ParticleData[] = [];
 
+    // Générer les positions selon l'effet
+    let veinPositions: { x: number; y: number; depth: number }[] | null = null;
+    const veinRatio = 0.7; // 70% sur les veines, 30% aléatoires
+
+    if (particleEffect === "veins") {
+      // Générer un réseau de veines 2D (seulement pour la portion veine)
+      const veinCount = Math.floor(count * veinRatio);
+      veinPositions = generateVeinNetwork2D(veinCount, 35, 5, 0.45);
+    }
+
     for (let i = 0; i < count; i++) {
-      const x = Math.random() * PARTICLE_CANVAS_WIDTH;
-      const y = Math.random() * PARTICLE_CANVAS_HEIGHT;
-      const colorHex =
-        colorOptions[Math.floor(Math.random() * colorOptions.length)];
+      let x: number, y: number;
+      let colorIndex = Math.floor(Math.random() * colorOptions.length);
+      let wavePhase = 0;
+      let branchDepth = -1; // -1 = particule aléatoire (pas sur une veine)
+
+      if (veinPositions && i < veinPositions.length) {
+        // Utiliser les positions des veines
+        x = veinPositions[i].x;
+        y = veinPositions[i].y;
+        branchDepth = veinPositions[i].depth;
+        // Couleur basée sur la profondeur (rouge foncé pour les branches, jaune pour les troncs)
+        const depthRatio = branchDepth / 5;
+        colorIndex = Math.floor(depthRatio * (colorOptions.length - 1));
+        // Phase de vague basée sur la position Y (inversée car Y=0 est en haut)
+        // Plus la particule est haute (Y petit), plus la phase est avancée
+        wavePhase = 1 - y / PARTICLE_CANVAS_HEIGHT;
+      } else {
+        // Particules aléatoires flottantes
+        x = Math.random() * PARTICLE_CANVAS_WIDTH;
+        y = Math.random() * PARTICLE_CANVAS_HEIGHT;
+      }
+
+      const colorHex = colorOptions[colorIndex];
 
       particles.push({
         x,
@@ -345,6 +880,8 @@ export function UScreen({
         phase: Math.random() * Math.PI * 2,
         size: config.size * 80 * (0.5 + Math.random() * 0.5),
         color: hexToRgbNormalized(colorHex),
+        wavePhase,
+        branchDepth,
       });
     }
     particleDataRef.current = particles;
@@ -393,10 +930,24 @@ export function UScreen({
       material.dispose();
       renderTarget.dispose();
     };
-  }, [showParticles, particleEffect]);
+  }, [showParticles, particleEffect, gl, gltf1, gltf2, gltf3]);
 
   // Animation loop - physique sur CPU, rendu sur GPU
   useFrame((state, delta) => {
+    // Transition de descente des écrans
+    if (transitionOut && yOffset > -5) {
+      const speed = 5 / 2; // -5 unités en 2 secondes
+      setYOffset((prev) => Math.max(-5, prev - delta * speed));
+    }
+
+    // Appeler le callback quand la transition est terminée
+    if (transitionOut && yOffset <= -5 && !transitionCompleteRef.current) {
+      transitionCompleteRef.current = true;
+      if (onTransitionComplete) {
+        onTransitionComplete();
+      }
+    }
+
     // Mise à jour vidéo
     if (
       !showParticles &&
@@ -405,13 +956,85 @@ export function UScreen({
       !videoRef.current.paused
     ) {
       videoTexture.needsUpdate = true;
+    }
+
+    // Sortir tôt si vidéo (pas de particules à mettre à jour)
+    if (!showParticles) {
       return;
     }
 
-    // Mise à jour particules
+    // Mise à jour morphing 3D
+    if (
+      showParticles &&
+      particleEffect === "morphing" &&
+      morphingFBORef.current &&
+      morphingSimMaterialRef.current &&
+      morphingRenderMaterialRef.current &&
+      particleSceneRef.current &&
+      particleCameraRef.current &&
+      renderTargetRef.current
+    ) {
+      const time = state.clock.elapsedTime;
+
+      // Calculer l'état build/morphing
+      const buildDur = morphingControls.buildDuration;
+      const morphDur = morphingControls.morphDuration;
+      const cycleDuration = buildDur + morphDur; // Durée d'un cycle par forme
+      const totalCycle = cycleDuration * 3; // Cycle complet (3 formes)
+
+      const cycleTime = time % totalCycle;
+      const formIndex = Math.floor(cycleTime / cycleDuration); // 0, 1 ou 2
+      const timeInCycle = cycleTime % cycleDuration;
+
+      // État: build (forme stable) ou morphing (transition)
+      let morphT = 0;
+      if (timeInCycle > buildDur) {
+        // État morphing: interpoler de 0 à 1
+        morphT = (timeInCycle - buildDur) / morphDur;
+      }
+      // Sinon état build: morphT reste à 0
+
+      // Calculer le screenOffset pour le déplacement entre écrans
+      // Position des écrans: droite = 1, centre = 0, gauche = -1
+      // Forme 0 sur écran droite (1), forme 1 sur écran centre (0), forme 2 sur écran gauche (-1)
+      const screenPositions = [1, 0, -1]; // droite, centre, gauche
+      const currentScreenPos = screenPositions[formIndex];
+      const nextScreenPos = screenPositions[(formIndex + 1) % 3];
+
+      // Interpoler entre la position actuelle et la suivante pendant le morphing
+      const screenOffset =
+        currentScreenPos + (nextScreenPos - currentScreenPos) * morphT;
+
+      // Mettre à jour les uniforms de simulation
+      morphingSimMaterialRef.current.uniforms.uMorphT.value = morphT;
+      morphingSimMaterialRef.current.uniforms.uFormIndex.value = formIndex;
+      morphingSimMaterialRef.current.uniforms.uScreenOffset.value =
+        screenOffset;
+      morphingSimMaterialRef.current.uniforms.uTime.value = time;
+
+      // Mettre à jour le FBO (calcul des positions sur GPU)
+      morphingFBORef.current.update();
+
+      // Mettre à jour les uniforms de rendu
+      morphingRenderMaterialRef.current.uniforms.uPositions.value =
+        morphingFBORef.current.texture;
+      morphingRenderMaterialRef.current.uniforms.uProgress.value = morphT;
+      morphingRenderMaterialRef.current.uniforms.uTime.value = time;
+
+      // Rendre sur le RenderTarget
+      const currentRenderTarget = gl.getRenderTarget();
+      gl.setRenderTarget(renderTargetRef.current);
+      gl.clear();
+      gl.render(particleSceneRef.current, particleCameraRef.current);
+      gl.setRenderTarget(currentRenderTarget);
+      return;
+    }
+
+    // Mise à jour particules 2D
     if (
       showParticles &&
       particleEffect !== "none" &&
+      particleEffect !== "morphing" &&
       particleSceneRef.current &&
       particleCameraRef.current &&
       renderTargetRef.current &&
@@ -456,7 +1079,11 @@ export function UScreen({
           const dirX = dx / dist;
           const dirY = dy / dist;
 
-          if (particleEffect === "dust") {
+          if (particleEffect === "veins") {
+            // Pour les veines: répulsion légère qui revient vite à la position d'origine
+            p.vx += dirX * force * 0.8;
+            p.vy += dirY * force * 0.8;
+          } else if (particleEffect === "dust") {
             // Vortex pour la poussière - rotation autour du joueur
             // Perpendiculaire + légère répulsion
             const vortexStrength = force * 1.5;
@@ -515,6 +1142,45 @@ export function UScreen({
             Math.cos(time * 0.5 + p.phase * 1.3) * 20 +
             Math.cos(time * 0.9 + p.phase) * 10;
           alpha = 0.5 + 0.5 * Math.sin(time * 2 + p.phase * 3);
+        } else if (particleEffect === "veins") {
+          if (p.branchDepth >= 0) {
+            // Particules sur les veines - effet de vague doux
+            const waveSpeed = 0.3;
+            const waveFrequency = 1.2;
+            const waveAmplitude = 6;
+
+            const waveTime = time * waveSpeed - p.wavePhase * waveFrequency;
+            const waveValue = Math.sin(waveTime * Math.PI * 2);
+            const depthFactor = 1 - p.branchDepth * 0.1;
+
+            animX = waveValue * waveAmplitude * depthFactor;
+            animY = Math.cos(waveTime * Math.PI * 2) * 2 * depthFactor;
+            alpha = 0.65 + 0.25 * Math.abs(waveValue);
+
+            animX += Math.sin(time * 1.2 + p.phase) * 1;
+            animY += Math.cos(time * 1 + p.phase) * 0.8;
+          } else {
+            // Particules aléatoires - feuilles emportées par le vent latéral
+            const windDirection = p.phase > Math.PI ? 1 : -1;
+            const gust = Math.sin(time * 0.3 + p.phase * 0.5) * 0.5 + 0.5;
+
+            // Dérive horizontale continue
+            const driftSpeed = 35;
+            const driftOffset =
+              (time * driftSpeed + p.phase * 300) %
+              (PARTICLE_CANVAS_WIDTH * 0.4);
+            animX = driftOffset * windDirection;
+
+            // Oscillations verticales légères (flottement)
+            animY =
+              Math.sin(time * 1.5 + p.phase * 3) * 12 +
+              Math.cos(time * 0.8 + p.phase * 2) * 8;
+
+            // Petites oscillations horizontales supplémentaires
+            animX += Math.sin(time * 2 + p.phase * 4) * 10 * gust;
+
+            alpha = 0.35 + 0.25 * Math.sin(time * 1.2 + p.phase);
+          }
         } else if (particleEffect === "snow") {
           const fallOffset =
             (time * 50 * config.speed + p.phase * 1000) %
@@ -572,24 +1238,45 @@ export function UScreen({
 
   const currentTexture = showParticles ? particleTexture : videoTexture;
 
-  if (!currentTexture) {
+  // Exposer la texture et la géométrie au parent pour la réflexion
+  useEffect(() => {
+    if (onTextureReady) {
+      onTextureReady(currentTexture);
+    }
+  }, [currentTexture, onTextureReady]);
+
+  // Ne pas rendre si la transition est terminée
+  if (transitionOut && yOffset <= -5) {
+    return null;
+  }
+
+  // Pendant la transition, on peut ne pas avoir de texture (morphing)
+  // On rend quand même avec un écran noir pour la descente
+  if (!currentTexture && !transitionOut) {
     return null;
   }
 
   return (
-    <mesh
-      ref={meshRef}
-      geometry={geometry}
-      position={[0, 0, -controls.depth / 2]}
-    >
-      <meshStandardMaterial
-        map={currentTexture}
-        emissiveMap={currentTexture}
-        emissive={new THREE.Color(1, 1, 1)}
-        emissiveIntensity={controls.emissiveIntensity}
-        side={THREE.DoubleSide}
-        toneMapped={false}
-      />
-    </mesh>
+    <group>
+      {/* Écran principal */}
+      <mesh
+        ref={meshRef}
+        geometry={geometry}
+        position={[0, yOffset, -controls.depth / 2]}
+      >
+        {currentTexture ? (
+          <meshStandardMaterial
+            map={currentTexture}
+            emissiveMap={currentTexture}
+            emissive={new THREE.Color(1, 1, 1)}
+            emissiveIntensity={controls.emissiveIntensity}
+            side={THREE.DoubleSide}
+            toneMapped={false}
+          />
+        ) : (
+          <meshBasicMaterial color="black" side={THREE.DoubleSide} />
+        )}
+      </mesh>
+    </group>
   );
 }

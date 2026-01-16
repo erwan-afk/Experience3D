@@ -16,10 +16,10 @@ export const canvasConfig: CanvasConfig = {
 
 export const lightConfig: LightConfig = {
   ambient: {
-    intensity: 0.1,
+    intensity: 0.5,
   },
   directional: {
     position: [10, 10, 5],
-    intensity: 0,
+    intensity: 1,
   },
 };

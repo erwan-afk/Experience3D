@@ -1,199 +1,155 @@
-import { useRef, useEffect, useState } from 'react'
-import { useThree, useFrame } from '@react-three/fiber'
-import * as THREE from 'three'
-import { useControls, button } from 'leva'
+import { useRef, useEffect } from "react";
+import { useThree } from "@react-three/fiber";
+import * as THREE from "three";
 
 interface SpatialAudioProps {
-  /** URL du fichier audio */
-  audioUrl?: string
-  /** Position de la source audio principale */
-  position?: [number, number, number]
-  /** Volume global */
-  volume?: number
-  /** Distance de référence (volume max) */
-  refDistance?: number
-  /** Distance maximale d'audition */
-  maxDistance?: number
+  url: string;
+  isPlaying: boolean;
+  currentTime: number; // temps en secondes
+  onReady?: () => void;
+  /** Position de la source audio dans l'espace 3D */
+  position?: [number, number, number];
+  /** Distance de référence pour l'atténuation (default: très loin = pas d'atténuation) */
+  refDistance?: number;
+  /** Volume (0-1) */
+  volume?: number;
 }
 
 /**
- * Audio spatialisé avec Web Audio API
- * Le son change en fonction de la position du joueur
+ * Composant d'audio spatial positionné dans l'espace 3D
+ * Le son suit l'orientation de la caméra - quand tu tournes la tête,
+ * le son semble venir de la direction de la source
  */
 export function SpatialAudio({
-  audioUrl = '/genesis-audio.mp3',
-  position = [0, 1.5, 4],
+  url,
+  isPlaying,
+  currentTime,
+  onReady,
+  position = [0, 1.6, -5], // Devant l'utilisateur, à hauteur des yeux
+  refDistance = 100, // Grande distance = peu d'atténuation avec la distance
   volume = 1,
-  refDistance = 1,
-  maxDistance = 20,
 }: SpatialAudioProps) {
-  const { camera } = useThree()
+  const { camera } = useThree();
 
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [isReady, setIsReady] = useState(false)
+  const listenerRef = useRef<THREE.AudioListener | null>(null);
+  const audioRef = useRef<THREE.PositionalAudio | null>(null);
+  const audioLoaderRef = useRef<THREE.AudioLoader | null>(null);
+  const isLoadedRef = useRef(false);
+  const lastSyncTimeRef = useRef(0);
 
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const listenerRef = useRef<THREE.AudioListener | null>(null)
-  const soundRef = useRef<THREE.PositionalAudio | null>(null)
-  const audioBufferRef = useRef<AudioBuffer | null>(null)
-
-  const controls = useControls('Audio Spatialisé', {
-    volume: { value: volume, min: 0, max: 2, step: 0.1 },
-    refDistance: { value: refDistance, min: 0.5, max: 10, step: 0.5 },
-    maxDistance: { value: maxDistance, min: 5, max: 50, step: 1 },
-    'Play/Pause': button(() => {
-      if (isPlaying) {
-        stopAudio()
-      } else {
-        playAudio()
-      }
-    }),
-  })
-
-  // Initialisation de l'audio
+  // Initialiser l'AudioListener et l'attacher à la caméra
   useEffect(() => {
-    const initAudio = async () => {
-      try {
-        // Créer le listener et l'attacher à la caméra
-        const listener = new THREE.AudioListener()
-        camera.add(listener)
-        listenerRef.current = listener
+    const listener = new THREE.AudioListener();
+    camera.add(listener);
+    listenerRef.current = listener;
 
-        // Créer la source audio positionnelle
-        const sound = new THREE.PositionalAudio(listener)
-        soundRef.current = sound
+    // Créer l'audio positionnel
+    const audio = new THREE.PositionalAudio(listener);
+    audioRef.current = audio;
 
-        // Charger le fichier audio
-        const audioLoader = new THREE.AudioLoader()
-        const buffer = await new Promise<AudioBuffer>((resolve, reject) => {
-          audioLoader.load(
-            audioUrl,
-            resolve,
-            undefined,
-            reject
-          )
-        })
+    // Configurer l'atténuation
+    audio.setRefDistance(refDistance);
+    audio.setRolloffFactor(1);
+    audio.setDistanceModel("inverse");
+    audio.setVolume(volume);
 
-        audioBufferRef.current = buffer
-        sound.setBuffer(buffer)
-        sound.setRefDistance(controls.refDistance)
-        sound.setMaxDistance(controls.maxDistance)
-        sound.setDistanceModel('inverse')
-        sound.setLoop(true)
-        sound.setVolume(controls.volume)
+    // Charger le fichier audio
+    const audioLoader = new THREE.AudioLoader();
+    audioLoaderRef.current = audioLoader;
 
-        setIsReady(true)
-        console.log('Audio spatialisé prêt')
-      } catch (error) {
-        console.error('Erreur lors du chargement audio:', error)
-      }
-    }
-
-    initAudio()
-
-    return () => {
-      if (soundRef.current) {
-        if (soundRef.current.isPlaying) {
-          soundRef.current.stop()
+    audioLoader.load(
+      url,
+      (buffer) => {
+        if (audioRef.current) {
+          audioRef.current.setBuffer(buffer);
+          audioRef.current.setLoop(false);
+          isLoadedRef.current = true;
+          onReady?.();
         }
-        soundRef.current.disconnect()
-      }
-      if (listenerRef.current && camera) {
-        camera.remove(listenerRef.current)
-      }
-    }
-  }, [audioUrl, camera])
-
-  // Mise à jour des paramètres audio
-  useEffect(() => {
-    if (soundRef.current) {
-      soundRef.current.setVolume(controls.volume)
-      soundRef.current.setRefDistance(controls.refDistance)
-      soundRef.current.setMaxDistance(controls.maxDistance)
-    }
-  }, [controls.volume, controls.refDistance, controls.maxDistance])
-
-  const playAudio = () => {
-    if (soundRef.current && isReady && !soundRef.current.isPlaying) {
-      // Reprendre le contexte audio si suspendu
-      const context = listenerRef.current?.context
-      if (context && context.state === 'suspended') {
-        context.resume()
-      }
-      soundRef.current.play()
-      setIsPlaying(true)
-    }
-  }
-
-  const stopAudio = () => {
-    if (soundRef.current && soundRef.current.isPlaying) {
-      soundRef.current.pause()
-      setIsPlaying(false)
-    }
-  }
-
-  // Auto-play au premier clic (pour contourner les restrictions du navigateur)
-  useEffect(() => {
-    const handleFirstInteraction = () => {
-      if (isReady && !isPlaying) {
-        playAudio()
-      }
-      // Retirer le listener après le premier clic
-      document.removeEventListener('click', handleFirstInteraction)
-    }
-
-    document.addEventListener('click', handleFirstInteraction)
+      },
+      undefined,
+      (error) => {
+        console.error("Erreur chargement audio spatial:", error);
+      },
+    );
 
     return () => {
-      document.removeEventListener('click', handleFirstInteraction)
+      if (audioRef.current) {
+        if (audioRef.current.isPlaying) {
+          audioRef.current.stop();
+        }
+        audioRef.current.disconnect();
+      }
+      if (listenerRef.current) {
+        camera.remove(listenerRef.current);
+      }
+    };
+  }, [camera, url, refDistance, onReady]);
+
+  // Mettre à jour le volume
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.setVolume(volume);
     }
-  }, [isReady, isPlaying])
+  }, [volume]);
+
+  // Gérer play/pause
+  useEffect(() => {
+    if (!audioRef.current || !isLoadedRef.current) return;
+
+    const audio = audioRef.current;
+
+    if (isPlaying) {
+      if (!audio.isPlaying) {
+        // Synchroniser le temps avant de jouer
+        const context = audio.context;
+        const buffer = audio.buffer;
+        if (buffer && context) {
+          // Définir le temps de départ
+          audio.offset = currentTime;
+          audio.play();
+        }
+      }
+    } else {
+      if (audio.isPlaying) {
+        audio.pause();
+      }
+    }
+  }, [isPlaying, currentTime]);
+
+  // Synchroniser le temps périodiquement pour éviter la dérive
+  useEffect(() => {
+    if (!audioRef.current || !isLoadedRef.current || !isPlaying) return;
+
+    const audio = audioRef.current;
+    const context = audio.context;
+
+    // Vérifier la dérive toutes les secondes
+    const syncInterval = setInterval(() => {
+      if (!audio.isPlaying || !audio.buffer) return;
+
+      // Calculer le temps actuel de l'audio
+      const audioCurrentTime =
+        (context.currentTime - audio._startedAt + audio.offset) %
+        audio.buffer.duration;
+      const drift = Math.abs(audioCurrentTime - currentTime);
+
+      // Si la dérive dépasse 300ms, resynchroniser
+      if (drift > 0.3) {
+        audio.stop();
+        audio.offset = currentTime;
+        audio.play();
+        lastSyncTimeRef.current = currentTime;
+      }
+    }, 1000);
+
+    return () => clearInterval(syncInterval);
+  }, [isPlaying, currentTime]);
 
   return (
-    <group position={position}>
-      {/* Visualisation de la source audio (optionnel, peut être retiré en prod) */}
-      {soundRef.current && (
-        <primitive object={soundRef.current} />
-      )}
-
-      {/* Indicateur visuel de la source (sphère semi-transparente) */}
-      <mesh visible={false}>
-        <sphereGeometry args={[0.2, 16, 16]} />
-        <meshBasicMaterial color="#00ff00" transparent opacity={0.5} />
-      </mesh>
-    </group>
-  )
-}
-
-/**
- * Composant pour plusieurs sources audio spatialisées
- * Permet de créer une ambiance sonore immersive
- */
-export function MultiSpatialAudio({
-  audioUrl = '/genesis-audio.mp3',
-}: {
-  audioUrl?: string
-}) {
-  // Sources audio positionnées autour du U
-  // Gauche, Centre-fond, Droite
-  const sources: [number, number, number][] = [
-    [-4, 1.5, 0],   // Gauche
-    [0, 1.5, 4],    // Fond centre
-    [4, 1.5, 0],    // Droite
-  ]
-
-  return (
-    <>
-      {sources.map((pos, index) => (
-        <SpatialAudio
-          key={index}
-          audioUrl={audioUrl}
-          position={pos}
-          volume={0.7}
-          refDistance={2}
-          maxDistance={15}
-        />
-      ))}
-    </>
-  )
+    <primitive
+      object={audioRef.current || new THREE.Object3D()}
+      position={position}
+    />
+  );
 }

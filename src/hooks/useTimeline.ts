@@ -5,7 +5,7 @@ import type {
   TransitionState,
   AmbientParticleEvent,
 } from "../types/timeline";
-import { isVideoScene, isParticleScene } from "../types/timeline";
+import { isVideoScene, isParticleScene, isTextScene } from "../types/timeline";
 import type { ParticleEffectType } from "../types/particles";
 import {
   defaultScenes,
@@ -45,6 +45,17 @@ interface UseTimelineReturn {
   ambientParticleOpacity: number;
   ambientParticleEvents: AmbientParticleEvent[];
   activeAmbientEffects: { effect: ParticleEffectType; opacity: number }[];
+  hasStarted: boolean;
+  // Pour l'audio spatial
+  audioCurrentTime: number; // temps en secondes
+  // Tone mapping
+  toneMappingExposure: number;
+  // Texte
+  currentText: string | null;
+  showText: boolean;
+  // Fin de l'expérience
+  isEnding: boolean;
+  resetEnding: () => void;
 }
 
 export function useTimeline({
@@ -57,12 +68,15 @@ export function useTimeline({
     useState<TransitionState>("idle");
   const [fadeOpacity, setFadeOpacity] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
+  const [isEnding, setIsEnding] = useState(false);
 
   const animationFrameRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
   const videoDurationsRef = useRef<Map<number, number>>(new Map());
   const transitioningRef = useRef(false);
+  const endingPausedRef = useRef(false);
   const elapsedTimeRef = useRef<number>(0); // Pour tracking précis
   const lastUIUpdateRef = useRef<number>(0); // Pour throttle UI updates
   const [videoDurationsLoaded, setVideoDurationsLoaded] = useState(false);
@@ -150,48 +164,51 @@ export function useTimeline({
     currentSceneDuration > 0 ? elapsedTime / currentSceneDuration : 0;
 
   // Fonction de transition avec fondu doux (cross-fade simulé)
-  const doTransition = useCallback((targetIndex: number) => {
-    if (transitioningRef.current) return;
-    transitioningRef.current = true;
+  const doTransition = useCallback(
+    (targetIndex: number) => {
+      if (transitioningRef.current) return;
+      transitioningRef.current = true;
 
-    setTransitionState("fading-out");
+      setTransitionState("fading-out");
 
-    // Fade out doux et lent
-    let opacity = 0;
-    const maxOpacity = 1;
-    const fadeSpeed = 0.015; // Très lent
+      // Fade out doux et lent
+      let opacity = 0;
+      const maxOpacity = 1;
+      const fadeSpeed = 0.015; // Très lent
 
-    const fadeOutInterval = setInterval(() => {
-      opacity += fadeSpeed;
-      if (opacity >= maxOpacity) {
-        clearInterval(fadeOutInterval);
-        setFadeOpacity(maxOpacity);
+      const fadeOutInterval = setInterval(() => {
+        opacity += fadeSpeed;
+        if (opacity >= maxOpacity) {
+          clearInterval(fadeOutInterval);
+          setFadeOpacity(maxOpacity);
 
-        // Changer de scène au milieu du fondu
-        setCurrentIndex(targetIndex);
-        setElapsedTime(0);
+          // Changer de scène au milieu du fondu
+          setCurrentIndex(targetIndex);
+          setElapsedTime(0);
 
-        // Fade in immédiat (cross-fade effect)
-        setTimeout(() => {
-          setTransitionState("fading-in");
-          let fadeInOpacity = maxOpacity;
-          const fadeInInterval = setInterval(() => {
-            fadeInOpacity -= fadeSpeed;
-            if (fadeInOpacity <= 0) {
-              clearInterval(fadeInInterval);
-              setFadeOpacity(0);
-              setTransitionState("idle");
-              transitioningRef.current = false;
-            } else {
-              setFadeOpacity(fadeInOpacity);
-            }
-          }, 16);
-        }, 50); // Délai très court pour effet cross-fade
-      } else {
-        setFadeOpacity(opacity);
-      }
-    }, 16); // 60fps
-  }, []);
+          // Fade in immédiat (cross-fade effect)
+          setTimeout(() => {
+            setTransitionState("fading-in");
+            let fadeInOpacity = maxOpacity;
+            const fadeInInterval = setInterval(() => {
+              fadeInOpacity -= fadeSpeed;
+              if (fadeInOpacity <= 0) {
+                clearInterval(fadeInInterval);
+                setFadeOpacity(0);
+                setTransitionState("idle");
+                transitioningRef.current = false;
+              } else {
+                setFadeOpacity(fadeInOpacity);
+              }
+            }, 16);
+          }, 50); // Délai très court pour effet cross-fade
+        } else {
+          setFadeOpacity(opacity);
+        }
+      }, 16); // 60fps
+    },
+    [scenes, getSceneDuration],
+  );
 
   // Passer à la scène suivante
   const nextScene = useCallback(() => {
@@ -215,11 +232,43 @@ export function useTimeline({
     const handleTimeUpdate = () => {
       if (isPlaying && transitionState === "idle") {
         setElapsedTime(videoElement.currentTime * 1000);
+
+        // Vérifier si c'est la dernière scène
+        const isLastScene = currentIndex === scenes.length - 1;
+        const timeRemaining = videoElement.duration - videoElement.currentTime;
+
+        if (isLastScene) {
+          // Dernière scène: pause à 1 seconde de la fin, puis overlay après 20s
+          if (timeRemaining <= 1 && timeRemaining > 0) {
+            if (!endingPausedRef.current) {
+              endingPausedRef.current = true;
+              videoElement.pause();
+              // Déclencher l'overlay après 20 secondes
+              setTimeout(() => {
+                setIsEnding(true);
+              }, 20000);
+            }
+          }
+        } else {
+          // Autres scènes: déclencher le fondu 2 secondes avant la fin
+          if (
+            timeRemaining <= 2 &&
+            timeRemaining > 0 &&
+            playbackMode === "auto" &&
+            !transitioningRef.current
+          ) {
+            nextScene();
+          }
+        }
       }
     };
 
     const handleEnded = () => {
+      // Fallback si le fondu anticipé n'a pas été déclenché
+      // Ne pas passer à la scène suivante si c'est la dernière
+      const isLastScene = currentIndex === scenes.length - 1;
       if (
+        !isLastScene &&
         playbackMode === "auto" &&
         transitionState === "idle" &&
         !transitioningRef.current
@@ -252,7 +301,7 @@ export function useTimeline({
     nextScene,
   ]);
 
-  // Animation des particules
+  // Animation des scènes avec durée (particules et texte)
   useEffect(() => {
     // Ne pas animer si pas en lecture ou en transition
     if (!isPlaying || transitionState !== "idle") {
@@ -263,8 +312,11 @@ export function useTimeline({
       return;
     }
 
-    // Seulement pour les scènes de particules
-    if (!currentScene || !isParticleScene(currentScene)) {
+    // Seulement pour les scènes avec durée (particules ou texte)
+    if (
+      !currentScene ||
+      (!isParticleScene(currentScene) && !isTextScene(currentScene))
+    ) {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
@@ -318,8 +370,10 @@ export function useTimeline({
   // Contrôles
   const play = useCallback(() => {
     setIsPlaying(true);
+    setHasStarted(true);
+
     if (videoElement && currentScene && isVideoScene(currentScene)) {
-      videoElement.play().catch(() => {});
+      videoElement.play().catch(console.error);
     }
   }, [videoElement, currentScene]);
 
@@ -418,6 +472,10 @@ export function useTimeline({
     setPlaybackMode((prev) => (prev === "auto" ? "manual" : "auto"));
   }, []);
 
+  const resetEnding = useCallback(() => {
+    setIsEnding(false);
+  }, []);
+
   // Valeurs dérivées
   const currentVideo =
     currentScene && isVideoScene(currentScene)
@@ -428,6 +486,9 @@ export function useTimeline({
       ? currentScene.effect
       : "fireflies";
   const showParticles = currentScene ? isParticleScene(currentScene) : false;
+  const currentText =
+    currentScene && isTextScene(currentScene) ? currentScene.text : null;
+  const showText = currentScene ? isTextScene(currentScene) : false;
 
   // Calculer le temps global actuel
   const globalTime = getGlobalElapsedTime();
@@ -470,6 +531,9 @@ export function useTimeline({
   const ambientParticleEffect = activeAmbientEvent?.effect || null;
   const showAmbientParticles = activeAmbientEvents.length > 0;
 
+  // Exposure de la scène courante
+  const toneMappingExposure = currentScene?.exposure ?? 3.0;
+
   return {
     currentVideo,
     particleEffect,
@@ -495,6 +559,13 @@ export function useTimeline({
     showAmbientParticles,
     ambientParticleOpacity,
     ambientParticleEvents,
-    activeAmbientEffects, // Liste des effets actifs avec leur opacité
+    activeAmbientEffects,
+    hasStarted,
+    audioCurrentTime: getGlobalElapsedTime() / 1000, // en secondes pour Three.js
+    toneMappingExposure,
+    currentText,
+    showText,
+    isEnding,
+    resetEnding,
   };
 }

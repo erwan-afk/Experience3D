@@ -1,10 +1,11 @@
-import { useRef, useMemo, useEffect } from "react";
+import { useRef, useMemo, useEffect, Suspense, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useGLTF, useAnimations } from "@react-three/drei";
 import { useControls } from "leva";
 import * as THREE from "three";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import type { ParticleEffectType } from "../../types/particles";
+import { MorphingParticles } from "./MorphingParticles";
 
 // Précharger les modèles
 useGLTF.preload("/small_rocks.glb");
@@ -68,7 +69,7 @@ function FallingRocks({
       // Les premiers 30% sont gros, les autres sont petits
       const isBigRock = i < rocksCount * 0.3;
       const scale = isBigRock
-        ? 0.004 + Math.random() * 0.006 // Gros cailloux
+        ? 0.002 + Math.random() * 0.003 // Gros cailloux (réduit)
         : 0.001 + Math.random() * 0.002; // Petits cailloux
 
       // Les gros tombent en premier (delay court), les petits après
@@ -120,9 +121,12 @@ function FallingRocks({
 
       rockAny.time += delta;
 
-      // Attendre le delay
+      // Attendre le delay - cacher le caillou
       if (rockAny.time < data.delay) {
+        rock.visible = false;
         return;
+      } else if (!rock.visible) {
+        rock.visible = true;
       }
 
       if (!rockAny.onGround) {
@@ -230,6 +234,8 @@ class GrassMaterial extends THREE.ShaderMaterial {
         uniform vec3 vPlayerPosition;
         uniform float fPlayerColliderRadius;
 
+        attribute vec3 aGrassColor;
+
         varying float vHeightFactor;
         varying vec3 vInstanceCol;
         varying vec3 vWorldPos;
@@ -246,13 +252,13 @@ class GrassMaterial extends THREE.ShaderMaterial {
         }
 
         void main() {
-          vInstanceCol = instanceColor;
+          vInstanceCol = aGrassColor;
 
           // Position monde (avant croissance)
           vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
 
           // Croissance individuelle par brin
-          float growthDelay = instanceColor.g * 25.0;
+          float growthDelay = aGrassColor.g * 25.0;
           float growthDuration = 12.0;
           float individualGrowth = clamp((fGrowth * 37.0 - growthDelay) / growthDuration, 0.0, 1.0);
 
@@ -260,7 +266,7 @@ class GrassMaterial extends THREE.ShaderMaterial {
           individualGrowth = individualGrowth * individualGrowth * individualGrowth * (individualGrowth * (individualGrowth * 6.0 - 15.0) + 10.0);
 
           // Hauteur finale variable
-          float maxHeightFactor = 0.4 + instanceColor.b * 0.6;
+          float maxHeightFactor = 0.4 + aGrassColor.b * 0.6;
           individualGrowth *= maxHeightFactor;
 
           vHeightFactor = position.y * 2.0 * individualGrowth;
@@ -589,6 +595,57 @@ interface FlowerData {
   rotation: number;
 }
 
+// Type pour les données pré-générées de l'herbe
+interface GrassInstanceData {
+  x: number;
+  z: number;
+  rotX: number;
+  rotY: number;
+  rotZ: number;
+  scale: number;
+  colorR: number;
+  colorG: number;
+  colorB: number;
+}
+
+// Générateur de nombres pseudo-aléatoires déterministe (seeded)
+function seededRandom(seed: number) {
+  const x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+}
+
+// Pré-générer toutes les données de l'herbe (exécuté une seule fois au chargement du module)
+const GRASS_COUNT = 7000;
+const FLOWER_COUNT = 20;
+
+const precomputedGrassData: GrassInstanceData[] = [];
+for (let i = 0; i < GRASS_COUNT; i++) {
+  const seed = i * 7919; // Nombre premier pour une bonne distribution
+  precomputedGrassData.push({
+    x: -5 + seededRandom(seed) * 10,
+    z: -5 + seededRandom(seed + 1) * 10,
+    rotX: (seededRandom(seed + 2) - 0.5) * 0.5,
+    rotY: seededRandom(seed + 3) * Math.PI * 2,
+    rotZ: (seededRandom(seed + 4) - 0.5) * 0.5,
+    scale: 0.6 + seededRandom(seed + 5) * 0.8,
+    colorR: seededRandom(seed + 6),
+    colorG: seededRandom(seed + 7),
+    colorB: seededRandom(seed + 8),
+  });
+}
+
+const precomputedFlowerData: FlowerData[] = [];
+for (let i = 0; i < FLOWER_COUNT; i++) {
+  const seed = i * 7919 + 100000;
+  precomputedFlowerData.push({
+    x: -4 + seededRandom(seed) * 8,
+    z: -4 + seededRandom(seed + 1) * 8,
+    growthDelay: seededRandom(seed + 2) * 20 + 15,
+    scale: 0.15 + seededRandom(seed + 3) * 0.1,
+    rotation: seededRandom(seed + 4) * Math.PI * 2,
+  });
+}
+
 function GrowingGrass({
   enabled = true,
   opacity = 1,
@@ -597,9 +654,8 @@ function GrowingGrass({
   opacity?: number;
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
-  const grassCount = 15000;
-  const flowerCount = 30;
   const startTimeRef = useRef<number | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // Contrôles leva pour la position du glow (partagé avec Flowers)
   const { glowX, glowY, glowZ, glowIntensity, glowDistance } = useControls(
@@ -613,20 +669,8 @@ function GrowingGrass({
     },
   );
 
-  // Données des fleurs - générées une seule fois et partagées
-  const flowerData = useMemo<FlowerData[]>(() => {
-    const data: FlowerData[] = [];
-    for (let i = 0; i < flowerCount; i++) {
-      data.push({
-        x: -4 + Math.random() * 8,
-        z: -4 + Math.random() * 8,
-        growthDelay: Math.random() * 20 + 15,
-        scale: 0.15 + Math.random() * 0.1,
-        rotation: Math.random() * Math.PI * 2,
-      });
-    }
-    return data;
-  }, [flowerCount]);
+  // Utiliser les données pré-générées
+  const flowerData = precomputedFlowerData;
 
   // Créer la géométrie d'un brin d'herbe courbé avec plusieurs segments
   const grassGeometry = useMemo(() => {
@@ -685,44 +729,69 @@ function GrowingGrass({
   // Matériau shader pour l'herbe
   const grassMaterial = useMemo(() => new GrassMaterial(), []);
 
-  // Initialiser les instances avec délais de croissance aléatoires
+  // Créer l'attribut de couleur custom pour éviter les conflits avec instanceColor
+  const grassColorAttribute = useMemo(() => {
+    const colors = new Float32Array(GRASS_COUNT * 3);
+    for (let i = 0; i < GRASS_COUNT; i++) {
+      const data = precomputedGrassData[i];
+      colors[i * 3] = data.colorR;
+      colors[i * 3 + 1] = data.colorG;
+      colors[i * 3 + 2] = data.colorB;
+    }
+    return new THREE.InstancedBufferAttribute(colors, 3);
+  }, []);
+
+  // Initialiser les instances par lots avec requestAnimationFrame
   useEffect(() => {
     if (!meshRef.current) return;
 
     const mesh = meshRef.current;
     const dummy = new THREE.Object3D();
 
-    for (let i = 0; i < grassCount; i++) {
-      // Position aléatoire dans la zone (élargie)
-      const x = -5 + Math.random() * 10;
-      const z = -5 + Math.random() * 10;
+    // Ajouter l'attribut de couleur custom à la géométrie
+    mesh.geometry.setAttribute("aGrassColor", grassColorAttribute);
 
-      dummy.position.set(x, 0, z);
-      // Rotation Y aléatoire (direction) + légères inclinaisons X et Z (penché)
-      dummy.rotation.set(
-        (Math.random() - 0.5) * 0.5, // Inclinaison X (-0.25 à 0.25 rad)
-        Math.random() * Math.PI * 2, // Direction Y (0 à 360°)
-        (Math.random() - 0.5) * 0.5, // Inclinaison Z (-0.25 à 0.25 rad)
-      );
-      dummy.scale.setScalar(0.6 + Math.random() * 0.8);
-      dummy.updateMatrix();
+    const BATCH_SIZE = 500; // Traiter 500 instances par frame
+    let currentIndex = 0;
+    let animationFrameId: number;
 
-      mesh.setMatrixAt(i, dummy.matrix);
+    function processBatch() {
+      const endIndex = Math.min(currentIndex + BATCH_SIZE, GRASS_COUNT);
 
-      // instanceColor: r = variation couleur, g = délai de croissance (0-1), b = unused
-      mesh.setColorAt(
-        i,
-        new THREE.Color(
-          Math.random(), // Variation de couleur
-          Math.random(), // Délai de croissance (0-1, multiplié par 6s dans le shader)
-          Math.random(), // Réservé
-        ),
-      );
+      for (let i = currentIndex; i < endIndex; i++) {
+        const data = precomputedGrassData[i];
+
+        dummy.position.set(data.x, 0, data.z);
+        dummy.rotation.set(data.rotX, data.rotY, data.rotZ);
+        dummy.scale.setScalar(data.scale);
+        dummy.updateMatrix();
+
+        mesh.setMatrixAt(i, dummy.matrix);
+      }
+
+      // Mettre à jour le buffer de matrices
+      mesh.instanceMatrix.needsUpdate = true;
+
+      currentIndex = endIndex;
+
+      if (currentIndex < GRASS_COUNT) {
+        // Continuer avec le prochain lot au prochain frame
+        animationFrameId = requestAnimationFrame(processBatch);
+      } else {
+        // Initialisation terminée
+        setIsInitialized(true);
+      }
     }
 
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  }, [grassCount]);
+    // Démarrer l'initialisation par lots
+    animationFrameId = requestAnimationFrame(processBatch);
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [grassColorAttribute]);
 
   // Animation
   useFrame((state) => {
@@ -796,7 +865,7 @@ function GrowingGrass({
     <>
       <instancedMesh
         ref={meshRef}
-        args={[grassGeometry, grassMaterial, grassCount]}
+        args={[grassGeometry, grassMaterial, GRASS_COUNT]}
         frustumCulled={false}
       />
       <Flowers
@@ -964,6 +1033,7 @@ const EFFECT_CONFIG: Record<
   snow: { color: "#ffffff", size: 0.02, riseSpeed: -0.2, count: 500 },
   dust: { color: "#d4a574", size: 0.02, riseSpeed: 0.1, count: 600 },
   energy: { color: "#00ffff", size: 0.025, riseSpeed: 0.4, count: 700 },
+  morphing: { color: "#ff4500", size: 0.12, riseSpeed: 0, count: 5000 }, // Morphing 3D (géré par MorphingParticles)
   rocks: { color: "#a08060", size: 0.15, riseSpeed: 0, count: 300 }, // Éboulement - cailloux qui tombent
 };
 
@@ -1158,6 +1228,23 @@ export function AmbientParticles({
   // Utiliser le composant Butterfly pour l'effet butterfly
   if (effect === "butterfly") {
     return <Butterfly enabled={enabled} />;
+  }
+
+  // Utiliser le composant MorphingParticles pour l'effet morphing
+  if (effect === "morphing") {
+    return (
+      <Suspense fallback={null}>
+        <MorphingParticles
+          models={[
+            "/models/morph1.glb",
+            "/models/morph2.glb",
+            "/models/morph3.glb",
+          ]}
+          morphDuration={12}
+          scale={1}
+        />
+      </Suspense>
+    );
   }
 
   return (

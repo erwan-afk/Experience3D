@@ -3,10 +3,12 @@ import * as THREE from "three";
 // Types d'effets de particules disponibles
 export type ParticleEffectType =
   | "fireflies" // Lucioles flottantes
+  | "veins" // Veines de braises ramifiées
   | "snow" // Chute de neige
   | "stars" // Étoiles scintillantes
   | "dust" // Poussières dans la lumière
   | "energy" // Flux d'énergie
+  | "morphing" // Morphing entre 3 modèles 3D
   | "rocks" // Éboulement - cailloux qui tombent
   | "grass" // Herbe qui pousse
   | "butterfly" // Papillon qui vole

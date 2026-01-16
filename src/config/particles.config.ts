@@ -17,6 +17,18 @@ export const particleEffects: Record<ParticleEffectType, ParticleEffectConfig> =
       forceFieldRadius: 2.5,
     },
 
+    veins: {
+      id: "veins",
+      name: "Veines de braises",
+      particleCount: 8000,
+      color: ["#cc1100", "#dd2200", "#ee3300", "#ff4500", "#ff5500", "#ff6622"],
+      size: 0.14,
+      speed: 0.2,
+      spread: [8, 4, 6],
+      forceFieldStrength: 0.04,
+      forceFieldRadius: 2.5,
+    },
+
     snow: {
       id: "snow",
       name: "Neige",
@@ -63,6 +75,54 @@ export const particleEffects: Record<ParticleEffectType, ParticleEffectConfig> =
       spread: [6, 4, 5],
       forceFieldStrength: 0.1,
       forceFieldRadius: 3,
+    },
+
+    morphing: {
+      id: "morphing",
+      name: "Morphing 3D",
+      particleCount: 3000,
+      color: ["#ff4500", "#ff6b35", "#ff8c00"],
+      size: 0.12,
+      speed: 0.15,
+      spread: [6, 4, 5],
+      forceFieldStrength: 0.06,
+      forceFieldRadius: 2.5,
+    },
+
+    rocks: {
+      id: "rocks",
+      name: "Rochers",
+      particleCount: 500,
+      color: ["#666666", "#888888", "#555555"],
+      size: 0.2,
+      speed: 0.5,
+      spread: [8, 4, 6],
+      forceFieldStrength: 0,
+      forceFieldRadius: 0,
+    },
+
+    grass: {
+      id: "grass",
+      name: "Herbe",
+      particleCount: 3000,
+      color: ["#228B22", "#32CD32", "#90EE90"],
+      size: 0.1,
+      speed: 0.3,
+      spread: [8, 2, 6],
+      forceFieldStrength: 0.02,
+      forceFieldRadius: 1.5,
+    },
+
+    butterfly: {
+      id: "butterfly",
+      name: "Papillon",
+      particleCount: 100,
+      color: ["#FF6B6B", "#4ECDC4", "#FFE66D"],
+      size: 0.15,
+      speed: 0.4,
+      spread: [6, 4, 6],
+      forceFieldStrength: 0.05,
+      forceFieldRadius: 2,
     },
 
     none: {

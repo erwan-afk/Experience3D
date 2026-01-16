@@ -2,34 +2,23 @@ import type { Scene, AmbientParticleEvent } from "../types/timeline";
 
 // Configuration par défaut des scènes
 export const defaultScenes: Scene[] = [
-  { type: "video", videoNumber: 1, transitionDuration: 500 },
+  { type: "video", videoNumber: 1, transitionDuration: 500, exposure: 1.0 },
   {
     type: "particles",
-    effect: "fireflies",
+    effect: "veins",
     duration: 90000,
     transitionDuration: 500,
+    exposure: 2.0,
   },
-  { type: "video", videoNumber: 2, transitionDuration: 500 },
+  { type: "video", videoNumber: 2, transitionDuration: 500, exposure: 1 },
   {
     type: "particles",
     effect: "dust",
     duration: 90000,
     transitionDuration: 500,
+    exposure: 2.5,
   },
-  { type: "video", videoNumber: 3, transitionDuration: 500 },
-  {
-    type: "particles",
-    effect: "stars",
-    duration: 90000,
-    transitionDuration: 500,
-  },
-  { type: "video", videoNumber: 4, transitionDuration: 500 },
-  {
-    type: "particles",
-    effect: "energy",
-    duration: 90000,
-    transitionDuration: 500,
-  },
+  { type: "video", videoNumber: 3, transitionDuration: 500, exposure: 0.5 },
 ];
 
 // Durée estimée pour les vidéos (sera remplacée par la vraie durée)
@@ -50,17 +39,17 @@ export const ambientParticleEvents: AmbientParticleEvent[] = [
   },
   {
     effect: "rocks", // Éboulement - cailloux qui tombent
-    startTime: 750000, // 12:30
-    duration: 190000, // Jusqu'à 15:40
-  },
-  {
-    effect: "grass", // Herbe qui pousse
-    startTime: 940000, // 15:40
-    duration: 990000, // 3 minutes
+    startTime: 607000, // 10:07
+    duration: 600000, // Jusqu'à la fin
   },
   {
     effect: "butterfly", // Papillon qui vole
-    startTime: 940000, // 15:40 (en même temps que l'herbe)
-    duration: 180000, // 3 minutes
+    startTime: 665000, // 11:05
+    duration: 600000,
+  },
+  {
+    effect: "grass", // Herbe qui pousse
+    startTime: 680000, // 11:20 (15s après papillon)
+    duration: 600000,
   },
 ];

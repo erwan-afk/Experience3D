@@ -4,6 +4,7 @@ export interface VideoScene {
   type: "video";
   videoNumber: number;
   transitionDuration: number; // ms
+  exposure?: number; // tone mapping exposure
 }
 
 export interface ParticleScene {
@@ -11,9 +12,18 @@ export interface ParticleScene {
   effect: ParticleEffectType;
   duration: number; // ms
   transitionDuration: number; // ms
+  exposure?: number; // tone mapping exposure
 }
 
-export type Scene = VideoScene | ParticleScene;
+export interface TextScene {
+  type: "text";
+  text: string;
+  duration: number; // ms
+  transitionDuration: number; // ms
+  exposure?: number; // tone mapping exposure
+}
+
+export type Scene = VideoScene | ParticleScene | TextScene;
 
 // Particules ambiantes dans l'espace 3D (superposées aux vidéos/particules écran)
 export interface AmbientParticleEvent {
@@ -43,4 +53,8 @@ export function isVideoScene(scene: Scene): scene is VideoScene {
 
 export function isParticleScene(scene: Scene): scene is ParticleScene {
   return scene.type === "particles";
+}
+
+export function isTextScene(scene: Scene): scene is TextScene {
+  return scene.type === "text";
 }

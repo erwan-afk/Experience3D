@@ -1,5 +1,22 @@
 @import "tailwindcss";
 
+/* Font Satoshi Variable */
+@font-face {
+    font-family: "Satoshi";
+    src: url("/fonts/Satoshi-Variable.woff2") format("woff2");
+    font-weight: 300 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Satoshi";
+    src: url("/fonts/Satoshi-VariableItalic.woff2") format("woff2");
+    font-weight: 300 900;
+    font-style: italic;
+    font-display: swap;
+}
+
 @layer base {
     * {
         box-sizing: border-box;
@@ -8,6 +25,7 @@
     }
 
     :root {
+        --font-sans: "Satoshi", Helvetica, "Helvetica Neue", Arial, sans-serif;
         --background: 0 0% 0%;
         --foreground: 0 0% 100%;
         --card: 0 0% 3.9%;
@@ -35,16 +53,36 @@
     #root {
         width: 100%;
         height: 100%;
+    }
+
+    /* Overflow hidden uniquement pour l'expérience 3D */
+    .app-container {
         overflow: hidden;
     }
 
     body {
-        font-family:
-            system-ui,
-            -apple-system,
-            sans-serif;
+        font-family: "Satoshi", Helvetica, "Helvetica Neue", Arial, sans-serif;
+        font-size: 18px;
         background: hsl(var(--background));
         color: hsl(var(--foreground));
+    }
+
+    /* Utility for serif font */
+    .font-serif {
+        font-family: "Times Now", serif;
+    }
+
+    /* Screen reader only */
+    .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
     }
 }
 
@@ -59,4 +97,350 @@
 canvas {
     touch-action: none;
     display: block;
+}
+
+/* Slogan responsive sizes - synced with crystal breakpoints */
+.slogan-size {
+    max-width: 240px;
+    padding-left: 1rem;
+    padding-right: 1rem;
+}
+
+@media (min-width: 400px) {
+    .slogan-size {
+        max-width: 300px;
+        padding-left: 0;
+        padding-right: 0;
+    }
+}
+
+@media (min-width: 770px) {
+    .slogan-size {
+        max-width: 420px;
+    }
+}
+
+@media (min-width: 901px) {
+    .slogan-size {
+        max-width: 500px;
+    }
+}
+
+@media (min-width: 1024px) {
+    .slogan-size {
+        max-width: 550px;
+    }
+}
+
+@media (min-width: 1260px) {
+    .slogan-size {
+        max-width: 620px;
+    }
+}
+
+@media (min-width: 1285px) {
+    .slogan-size {
+        max-width: 700px;
+    }
+}
+
+@media (min-width: 1600px) {
+    .slogan-size {
+        max-width: 800px;
+    }
+}
+
+/* Crystal responsive sizes and transforms */
+/* Mobile first: base styles for < 400px */
+.crystal-size {
+    width: 250px;
+}
+
+.crystal-left {
+    transform: translateX(-75%) translateY(-50%) scale(1.5) rotate(240deg);
+}
+
+.crystal-right {
+    transform: translateX(75%) translateY(-50%) scale(1.5) scaleX(-1)
+        rotate(70deg);
+}
+
+/* 400px - 769px : zone safe */
+@media (min-width: 400px) {
+    .crystal-size {
+        width: 350px;
+    }
+    .crystal-left {
+        transform: translateX(-70%) translateY(-50%) scale(1.5) rotate(240deg);
+    }
+    .crystal-right {
+        transform: translateX(70%) translateY(-50%) scale(1.5) scaleX(-1)
+            rotate(70deg);
+    }
+}
+
+/* 770px - 900px : zone problématique - pousser les cristaux */
+@media (min-width: 770px) {
+    .crystal-size {
+        width: 450px;
+    }
+    .crystal-left {
+        transform: translateX(-68%) translateY(-50%) scale(1.5) rotate(240deg);
+    }
+    .crystal-right {
+        transform: translateX(68%) translateY(-50%) scale(1.5) scaleX(-1)
+            rotate(70deg);
+    }
+}
+
+/* 901px - 1023px : zone safe */
+@media (min-width: 901px) {
+    .crystal-size {
+        width: 550px;
+    }
+    .crystal-left {
+        transform: translateX(-60%) translateY(-50%) scale(1.5) rotate(240deg);
+    }
+    .crystal-right {
+        transform: translateX(60%) translateY(-50%) scale(1.5) scaleX(-1)
+            rotate(70deg);
+    }
+}
+
+/* 1024px - 1259px : zone problématique - pousser les cristaux */
+@media (min-width: 1024px) {
+    .crystal-size {
+        width: 600px;
+    }
+    .crystal-left {
+        transform: translateX(-62%) translateY(-50%) scale(1.5) rotate(240deg);
+    }
+    .crystal-right {
+        transform: translateX(62%) translateY(-50%) scale(1.5) scaleX(-1)
+            rotate(70deg);
+    }
+}
+
+/* 1260px - 1284px : encore un peu serré */
+@media (min-width: 1260px) {
+    .crystal-size {
+        width: 650px;
+    }
+    .crystal-left {
+        transform: translateX(-58%) translateY(-50%) scale(1.5) rotate(240deg);
+    }
+    .crystal-right {
+        transform: translateX(58%) translateY(-50%) scale(1.5) scaleX(-1)
+            rotate(70deg);
+    }
+}
+
+/* 1285px - 1599px : zone problématique - pousser les cristaux */
+@media (min-width: 1285px) {
+    .crystal-size {
+        width: 700px;
+    }
+    .crystal-left {
+        transform: translateX(-56%) translateY(-50%) scale(1.5) rotate(240deg);
+    }
+    .crystal-right {
+        transform: translateX(56%) translateY(-50%) scale(1.5) scaleX(-1)
+            rotate(70deg);
+    }
+}
+
+/* 1600px+ : zone parfaite */
+@media (min-width: 1600px) {
+    .crystal-size {
+        width: 800px;
+    }
+    .crystal-left {
+        transform: translateX(-50%) translateY(-50%) scale(1.5) rotate(240deg);
+    }
+    .crystal-right {
+        transform: translateX(50%) translateY(-50%) scale(1.5) scaleX(-1)
+            rotate(70deg);
+    }
+}
+
+/* Shiny button effect */
+.shiny-button {
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s ease;
+}
+
+.shiny-button::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    opacity: 0.4;
+    background: linear-gradient(
+        to right,
+        transparent 0%,
+        white 50%,
+        transparent 100%
+    );
+    transform: skewX(-20deg);
+    transition: left 0.3s ease;
+}
+
+.shiny-button:hover::before {
+    left: 100%;
+}
+
+.shiny-button:hover {
+    border-color: rgba(255, 255, 255, 0.8);
+}
+
+/* Progressive blur effect */
+.progressive-blur-container {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.progressive-blur-container > div {
+    position: absolute;
+    inset: 0;
+    backdrop-filter: blur(0px);
+}
+
+.progressive-blur-container > div:nth-child(1) {
+    backdrop-filter: blur(0.5px);
+    mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 1) 0%,
+        rgba(0, 0, 0, 1) 12.5%,
+        rgba(0, 0, 0, 0) 25%
+    );
+    -webkit-mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 1) 0%,
+        rgba(0, 0, 0, 1) 12.5%,
+        rgba(0, 0, 0, 0) 25%
+    );
+}
+
+.progressive-blur-container > div:nth-child(2) {
+    backdrop-filter: blur(1px);
+    mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 12.5%,
+        rgba(0, 0, 0, 1) 25%,
+        rgba(0, 0, 0, 1) 37.5%,
+        rgba(0, 0, 0, 0) 50%
+    );
+    -webkit-mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 12.5%,
+        rgba(0, 0, 0, 1) 25%,
+        rgba(0, 0, 0, 1) 37.5%,
+        rgba(0, 0, 0, 0) 50%
+    );
+}
+
+.progressive-blur-container > div:nth-child(3) {
+    backdrop-filter: blur(2px);
+    mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 25%,
+        rgba(0, 0, 0, 1) 37.5%,
+        rgba(0, 0, 0, 1) 50%,
+        rgba(0, 0, 0, 0) 62.5%
+    );
+    -webkit-mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 25%,
+        rgba(0, 0, 0, 1) 37.5%,
+        rgba(0, 0, 0, 1) 50%,
+        rgba(0, 0, 0, 0) 62.5%
+    );
+}
+
+.progressive-blur-container > div:nth-child(4) {
+    backdrop-filter: blur(4px);
+    mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 37.5%,
+        rgba(0, 0, 0, 1) 50%,
+        rgba(0, 0, 0, 1) 62.5%,
+        rgba(0, 0, 0, 0) 75%
+    );
+    -webkit-mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 37.5%,
+        rgba(0, 0, 0, 1) 50%,
+        rgba(0, 0, 0, 1) 62.5%,
+        rgba(0, 0, 0, 0) 75%
+    );
+}
+
+.progressive-blur-container > div:nth-child(5) {
+    backdrop-filter: blur(8px);
+    mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 50%,
+        rgba(0, 0, 0, 1) 62.5%,
+        rgba(0, 0, 0, 1) 75%,
+        rgba(0, 0, 0, 0) 87.5%
+    );
+    -webkit-mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 50%,
+        rgba(0, 0, 0, 1) 62.5%,
+        rgba(0, 0, 0, 1) 75%,
+        rgba(0, 0, 0, 0) 87.5%
+    );
+}
+
+.progressive-blur-container > div:nth-child(6) {
+    backdrop-filter: blur(16px);
+    mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 62.5%,
+        rgba(0, 0, 0, 1) 75%,
+        rgba(0, 0, 0, 1) 87.5%,
+        rgba(0, 0, 0, 0) 100%
+    );
+    -webkit-mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 62.5%,
+        rgba(0, 0, 0, 1) 75%,
+        rgba(0, 0, 0, 1) 87.5%,
+        rgba(0, 0, 0, 0) 100%
+    );
+}
+
+.progressive-blur-container > div:nth-child(7) {
+    backdrop-filter: blur(32px);
+    mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 75%,
+        rgba(0, 0, 0, 1) 87.5%,
+        rgba(0, 0, 0, 1) 100%
+    );
+    -webkit-mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 75%,
+        rgba(0, 0, 0, 1) 87.5%,
+        rgba(0, 0, 0, 1) 100%
+    );
+}
+
+.progressive-blur-container > div:nth-child(8) {
+    backdrop-filter: blur(64px);
+    mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 87.5%,
+        rgba(0, 0, 0, 1) 100%
+    );
+    -webkit-mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 87.5%,
+        rgba(0, 0, 0, 1) 100%
+    );
 }
